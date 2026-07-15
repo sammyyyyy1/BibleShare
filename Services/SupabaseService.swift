@@ -56,10 +56,11 @@ final class SupabaseService: AuthProviding {
                 .execute()
                 .value
             return profile
-        } catch {
-            // `.single()` throws when zero rows exist (row not yet created).
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            // `.single()` throws PGRST116 when zero rows exist (row not yet created).
             return nil
         }
+        // Any other error (network, RLS, decode, etc.) propagates to the caller.
     }
 
     func isUsernameAvailable(_ candidate: String) async throws -> Bool {

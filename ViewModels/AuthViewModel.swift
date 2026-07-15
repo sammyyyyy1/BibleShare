@@ -54,7 +54,12 @@ final class AuthViewModel {
 
     private func refreshProfile() async {
         guard let userID = session?.user.id else { profile = nil; return }
-        profile = try? await provider.fetchProfile(userID: userID)
+        do {
+            profile = try await provider.fetchProfile(userID: userID)
+        } catch {
+            // Real error (not "no row"): keep any existing profile, surface the error.
+            errorMessage = mapAuthError(error)
+        }
     }
 
     // MARK: Email
