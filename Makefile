@@ -4,7 +4,7 @@
 APP        := BibleShare
 SCHEME     := BibleShare
 BUNDLE_ID  := com.bibleshare.app
-DEVICE     ?= iPhone 16
+DEVICE     ?= iPhone 17
 CONFIG     ?= Debug
 BUILD_DIR  := build
 DERIVED    := $(BUILD_DIR)/DerivedData
@@ -18,7 +18,7 @@ help:
 	@echo "  make run       - build, boot simulator, install & launch the app"
 	@echo "  make lint      - run SwiftLint (if installed)"
 	@echo "  make clean     - remove build artifacts"
-	@echo "Vars: DEVICE='iPhone 16' CONFIG=Debug"
+	@echo "Vars: DEVICE='iPhone 17' CONFIG=Debug"
 
 generate:
 	xcodegen generate
