@@ -1,90 +1,78 @@
 import SwiftUI
 
-/// Sign-in / sign-up screen. Serves as the working end-to-end example
-/// against the real Supabase project.
 struct AuthView: View {
     @Environment(AuthViewModel.self) private var auth
 
     @State private var email = ""
     @State private var password = ""
-    @State private var mode: Mode = .signIn
-
-    private enum Mode {
-        case signIn, signUp
-
-        var title: String { self == .signIn ? "Sign In" : "Sign Up" }
-        var togglePrompt: String {
-            self == .signIn ? "Don't have an account? Sign Up" : "Have an account? Sign In"
-        }
-    }
+    @State private var isSignUp = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                Image(systemName: "book.pages")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
+        @Bindable var auth = auth
+        ScrollView {
+            VStack(spacing: 18) {
+                Spacer(minLength: 40)
 
-                Text("BibleShare")
-                    .font(.largeTitle.bold())
-
-                VStack(spacing: 12) {
-                    TextField("Email", text: $email)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    SecureField("Password", text: $password)
-                        .textContentType(mode == .signUp ? .newPassword : .password)
+                VStack(spacing: 8) {
+                    Image(systemName: "book.pages")
+                        .font(.system(size: 44)).foregroundStyle(Theme.indigo)
+                    Text("BibleShare").font(Theme.wordmark).foregroundStyle(Theme.ink)
+                    Text("Share the Word, together.")
+                        .font(.subheadline).foregroundStyle(Theme.muted)
                 }
-                .textFieldStyle(.roundedBorder)
+
+                VStack(spacing: 10) {
+                    SereneTextField(title: "Email", text: $email,
+                                    keyboard: .emailAddress, content: .emailAddress)
+                    SereneSecureField(title: "Password", text: $password,
+                                      content: isSignUp ? .newPassword : .password)
+                }
 
                 if let error = auth.errorMessage {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                    Text(error).font(.footnote).foregroundStyle(Theme.danger)
                         .multilineTextAlignment(.center)
                 }
 
-                Button {
+                PrimaryButton(title: isSignUp ? "Create Account" : "Sign In",
+                              isLoading: auth.isLoading) {
                     Task { await submit() }
-                } label: {
-                    if auth.isLoading {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text(mode.title)
-                            .frame(maxWidth: .infinity)
+                }
+                .disabled(email.isEmpty || password.isEmpty)
+
+                OrDivider(text: "OR CONTINUE WITH").padding(.vertical, 2)
+
+                VStack(spacing: 8) {
+                    SocialButton(label: "Continue with Google",
+                                 systemMark: "g.circle.fill", markColor: .blue) {
+                        Task { await auth.signInWithGoogle() }
+                    }
+                    SocialButton(label: "Continue with Discord",
+                                 systemMark: "bubble.left.fill", markColor: .indigo) {
+                        Task { await auth.signInWithDiscord() }
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(auth.isLoading || email.isEmpty || password.isEmpty)
 
-                Button(mode.togglePrompt) {
-                    mode = (mode == .signIn) ? .signUp : .signIn
+                Button(isSignUp ? "Have an account? Sign In" : "New here? Sign Up") {
+                    isSignUp.toggle(); auth.errorMessage = nil
                 }
-                .font(.footnote)
+                .font(.footnote).foregroundStyle(Theme.indigo)
 
-                Spacer()
+                Spacer(minLength: 20)
             }
-            .padding()
-            .navigationTitle("Welcome")
-            .navigationBarTitleDisplayMode(.inline)
+            .padding(24)
         }
+        .background(Theme.cream.ignoresSafeArea())
     }
 
     private func submit() async {
-        switch mode {
-        case .signIn:
-            await auth.signIn(email: email, password: password)
-        case .signUp:
-            await auth.signUp(email: email, password: password)
+        if isSignUp {
+            await auth.signUpEmail(email: email, password: password)
+        } else {
+            await auth.signInEmail(email: email, password: password)
         }
     }
 }
 
 #Preview {
-    AuthView()
-        .environment(AuthViewModel())
+    AuthView().environment(AuthViewModel(provider: SupabaseService.shared))
 }

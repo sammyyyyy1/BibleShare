@@ -46,11 +46,28 @@ targets:
       - package: Supabase
         product: Supabase
 
+  BibleShareTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: BibleShareTests
+    dependencies:
+      - target: BibleShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bibleshare.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+
 schemes:
   BibleShare:
     build:
       targets:
         BibleShare: all
+    test:
+      targets:
+        - BibleShareTests
     run:
       config: Debug
     profile:

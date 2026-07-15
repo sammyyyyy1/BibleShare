@@ -6,6 +6,7 @@ import Foundation
 struct Profile: Codable, Identifiable, Hashable, Sendable {
     let id: UUID
     var username: String
+    var usernameSet: Bool
     var displayName: String?
     var avatarURL: URL?
     var bio: String?
@@ -14,6 +15,7 @@ struct Profile: Codable, Identifiable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id
         case username
+        case usernameSet = "username_set"
         case displayName = "display_name"
         case avatarURL = "avatar_url"
         case bio
@@ -75,4 +77,10 @@ struct Comment: Codable, Identifiable, Hashable, Sendable {
         case content
         case createdAt = "created_at"
     }
+}
+
+/// Payload for setting a user's chosen username.
+struct ProfileUpdate: Encodable, Sendable {
+    let username: String
+    let username_set: Bool
 }

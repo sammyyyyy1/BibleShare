@@ -35,5 +35,16 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.bibleshare.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>bibleshare</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

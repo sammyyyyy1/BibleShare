@@ -1,47 +1,21 @@
 import SwiftUI
 
-/// Root view that switches between the auth flow and the signed-in experience.
 struct RootView: View {
     @Environment(AuthViewModel.self) private var auth
 
     var body: some View {
         Group {
-            switch auth.session {
-            case .some:
-                SignedInPlaceholderView()
-            case .none:
-                AuthView()
+            switch auth.route {
+            case .signedOut:     AuthView()
+            case .needsUsername: UsernameSetupView()
+            case .ready:         HomeView()
             }
         }
-        .animation(.default, value: auth.session != nil)
-    }
-}
-
-/// Temporary placeholder shown after a successful sign-in.
-private struct SignedInPlaceholderView: View {
-    @Environment(AuthViewModel.self) private var auth
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: "book.pages")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
-                Text("Welcome to BibleShare")
-                    .font(.title.bold())
-                if let email = auth.currentUserEmail {
-                    Text(email)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Button("Sign Out") {
-                    Task { await auth.signOut() }
-                }
-                .buttonStyle(.bordered)
-                .padding(.top, 8)
-            }
-            .padding()
-            .navigationTitle("Home")
+        .animation(.default, value: auth.route)
+        .onOpenURL { url in
+            // Email-confirmation / OAuth deep links (OAuth web flow is also
+            // captured by ASWebAuthenticationSession directly).
+            Task { try? await SupabaseService.shared.client.auth.session(from: url) }
         }
     }
 }
