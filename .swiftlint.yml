@@ -1,0 +1,38 @@
+# SwiftLint configuration for BibleShare
+# Docs: https://realm.github.io/SwiftLint/
+
+included:
+  - App
+  - Models
+  - Views
+  - ViewModels
+  - Services
+
+excluded:
+  - build
+  - .build
+  - "**/.build"
+
+# Keep the baseline gentle so it helps rather than nags.
+disabled_rules:
+  - trailing_whitespace
+  - todo
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - force_unwrapping
+
+line_length:
+  warning: 120
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+
+identifier_name:
+  min_length: 2          # allow "id", "db"
+  excluded:
+    - id
+
+type_name:
+  min_length: 3
