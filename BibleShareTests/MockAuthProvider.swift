@@ -9,20 +9,20 @@ actor MockAuthProvider: AuthProviding {
     var availableResult: Bool = true
     var errorToThrow: Error?
 
-    private let stream: AsyncStream<(AuthChangeEvent, Session?)>
-    private let continuation: AsyncStream<(AuthChangeEvent, Session?)>.Continuation
+    private let stream: AsyncStream<(event: AuthChangeEvent, session: Session?)>
+    private let continuation: AsyncStream<(event: AuthChangeEvent, session: Session?)>.Continuation
 
     init() {
-        var cont: AsyncStream<(AuthChangeEvent, Session?)>.Continuation!
+        var cont: AsyncStream<(event: AuthChangeEvent, session: Session?)>.Continuation!
         stream = AsyncStream { cont = $0 }
         continuation = cont
     }
 
-    nonisolated var authStateChanges: AsyncStream<(AuthChangeEvent, Session?)> { stream }
+    nonisolated var authStateChanges: AsyncStream<(event: AuthChangeEvent, session: Session?)> { stream }
     var currentSession: Session? { get async { nil } }
 
     func emit(_ event: AuthChangeEvent, _ session: Session?) {
-        continuation.yield((event, session))
+        continuation.yield((event: event, session: session))
     }
 
     func setProfile(_ p: Profile?) { profileToReturn = p }

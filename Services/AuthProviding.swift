@@ -9,7 +9,7 @@ enum AuthProviderError: Error, Equatable {
 /// The auth surface AuthViewModel depends on. SupabaseService implements it;
 /// tests use MockAuthProvider.
 protocol AuthProviding: Sendable {
-    var authStateChanges: AsyncStream<(AuthChangeEvent, Session?)> { get }
+    var authStateChanges: AsyncStream<(event: AuthChangeEvent, session: Session?)> { get }
     var currentSession: Session? { get async }
 
     func signUpEmail(email: String, password: String) async throws
