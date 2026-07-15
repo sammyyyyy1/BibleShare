@@ -1,0 +1,34 @@
+# === macOS ===
+.DS_Store
+
+# === Xcode ===
+## User settings & state
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+## Build products
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Generated project (regenerate with `xcodegen generate` / `make generate`)
+*.xcodeproj
+
+# === Swift Package Manager ===
+.build/
+.swiftpm/
+Package.resolved
+
+# === Secrets / local config (NEVER commit) ===
+Secrets.plist
+*.xcconfig.local
+.env
+.env.*
+
+# === Tooling ===
+.cocoindex_code/
