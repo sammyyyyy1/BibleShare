@@ -77,9 +77,9 @@ struct AuthView: View {
     private func submit() async {
         switch mode {
         case .signIn:
-            await auth.signIn(email: email, password: password)
+            await auth.signInEmail(email: email, password: password)
         case .signUp:
-            await auth.signUp(email: email, password: password)
+            await auth.signUpEmail(email: email, password: password)
         }
     }
 }
