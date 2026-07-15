@@ -2,14 +2,14 @@
 
 **Date:** 2026-07-15
 **Status:** Approved (design), pending implementation plan
-**Scope:** Sign in / sign up (email/password + Google, Apple, Discord), a mandatory username step, and the signed-in Home shell. Home content itself is out of scope — it is an empty placeholder screen.
+**Scope:** Sign in / sign up (email/password + Google, Discord), a mandatory username step, and the signed-in Home shell. Home content itself is out of scope — it is an empty placeholder screen. (Apple sign-in is deferred — see §9 — until a paid Apple Developer account exists.)
 
 ---
 
 ## 1. Goals & non-goals
 
 **Goals**
-- Users can create an account and sign in via email/password, Google, Apple, and Discord.
+- Users can create an account and sign in via email/password, Google, and Discord.
 - Every user has a unique username, collected through a mandatory post-auth step that is uniform across all sign-in methods.
 - A polished "Serene Light" login UI (approved mockup A), a username-setup screen, and an empty Home shell.
 
@@ -64,7 +64,7 @@ Applied as a new migration (`supabase/migrations/<ts>_auth_onboarding.sql`) and 
 
 ### 3.5 Auth config (via MCP / dashboard)
 - Set `mailer_autoconfirm = true` for dev (documented as a pre-production toggle-back).
-- Enable Google, Apple, Discord providers (manual — see §8).
+- Enable Google, Discord providers (manual — see §8).
 
 ---
 
@@ -77,7 +77,6 @@ protocol AuthProviding {
     var authStateChanges: AsyncStream<(AuthChangeEvent, Session?)> { get }
     func signUpEmail(email:password:) async throws
     func signInEmail(email:password:) async throws
-    func signInWithIdToken(provider:idToken:nonce:) async throws   // Apple
     func startWebOAuth(provider:) async throws                     // Google, Discord
     func signOut() async throws
     func fetchProfile(userID:) async throws -> Profile?
@@ -90,13 +89,13 @@ protocol AuthProviding {
 ### 4.2 `AuthViewModel` (`@MainActor @Observable`)
 - State: `session: Session?`, `profile: Profile?`, `isLoading`, `errorMessage`, `usernameStatus` (`.idle/.checking/.available/.taken/.invalid`).
 - Derived: `route` → `.signedOut | .needsUsername | .ready`.
-- Methods: `signUpEmail`, `signInEmail`, `signInWithGoogle`, `signInWithApple`, `signInWithDiscord`, `signOut`, `checkUsername(_:)` (debounced), `submitUsername(_:)`.
+- Methods: `signUpEmail`, `signInEmail`, `signInWithGoogle`, `signInWithDiscord`, `signOut`, `checkUsername(_:)` (debounced), `submitUsername(_:)`.
 - Streams `authStateChanges`; on change, refreshes `profile`.
 
 ### 4.3 Providers
 - **Email/password** — GoTrue `signUp` / `signIn`. With auto-confirm, sign-up yields an active session immediately → lands on username gate.
 - **Google / Discord** — `ASWebAuthenticationSession` driven by `supabase-swift` `signInWithOAuth`, redirect `bibleshare://auth-callback`. The presentation-context provider is supplied from the app.
-- **Apple** — native `ASAuthorizationController` (`SignInWithAppleButton`); take the returned identity token + raw nonce → `auth.signInWithIdToken(provider: .apple, ...)`. A cryptographic nonce (SHA256) is generated per attempt.
+- **Apple** — deferred (needs a paid Apple Developer account). Not built this round; see §9.
 - **Deep linking** — register URL scheme `bibleshare` under `CFBundleURLTypes` in `project.yml`; `RootView`/App uses `.onOpenURL` to hand the callback URL to Supabase (`supabase.auth.session(from:)`).
 
 ### 4.4 Configuration
@@ -146,11 +145,10 @@ A `Theme` enum/namespace with the approved palette and type:
 
 ## 8. Manual setup required (cannot be done by the agent)
 
-1. **Apple Developer** (paid): enable "Sign in with Apple" capability on the app ID; create a Services ID + key for the token flow.
-2. **Google Cloud**: OAuth 2.0 client; authorized redirect to the Supabase callback; copy client ID/secret.
-3. **Discord Developer Portal**: application + OAuth2 redirect to the Supabase callback; copy client ID/secret.
-4. **Supabase dashboard → Authentication → Providers**: enable Google, Apple, Discord; paste each client ID/secret.
-5. **Supabase dashboard → URL Configuration**: add `bibleshare://auth-callback` to redirect allow-list.
+1. **Google Cloud**: OAuth 2.0 client; authorized redirect to the Supabase callback; copy client ID/secret.
+2. **Discord Developer Portal**: application + OAuth2 redirect to the Supabase callback; copy client ID/secret.
+3. **Supabase dashboard → Authentication → Providers**: enable Google, Discord; paste each client ID/secret.
+4. **Supabase dashboard → URL Configuration**: add `bibleshare://auth-callback` to redirect allow-list.
 
 The agent will: apply the DB migration, flip `mailer_autoconfirm` on, add the URL scheme to `project.yml`, and write all Swift/UI code. OAuth providers can be developed and merged before credentials exist; they light up once §8 is done. Email/password works end-to-end immediately.
 
@@ -158,6 +156,7 @@ The agent will: apply the DB migration, flip `mailer_autoconfirm` on, add the UR
 
 ## 9. Open items / future
 
+- **Apple sign-in (deferred):** add native `SignInWithAppleButton` + `auth.signInWithIdToken(provider: .apple, ...)` with a per-attempt SHA256 nonce once a paid Apple Developer account and the "Sign in with Apple" capability exist. **Required by App Store review before shipping a build that offers Google/Discord**, so add it before submission.
 - `handle_new_user` display-name seeding depends on each provider's metadata shape; verify per provider.
 - Before production: set `mailer_autoconfirm = false`, add custom SMTP, and build the "check your inbox" + deep-link confirmation screen (path already accommodated by the state model).
 - Username change flow (rate-limited) is a later feature.

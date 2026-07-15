@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship email/password + Google/Apple/Discord sign-in with a mandatory username step and a "Serene Light" login → username → empty Home flow.
+**Goal:** Ship email/password + Google/Discord sign-in with a mandatory username step and a "Serene Light" login → username → empty Home flow. (Apple sign-in is deferred until a paid Apple Developer account exists — see the post-plan section.)
 
 **Architecture:** SwiftUI `@Observable` `AuthViewModel` depends on an `AuthProviding` protocol (implemented by `SupabaseService`) so it is unit-testable. `RootView` routes between three states — signed-out, needs-username, ready — derived from the Supabase session + a `profiles` row whose `username_set` flag gates entry. Postgres enforces username format/uniqueness; a `handle_new_user` trigger guarantees every auth user has a profile row.
 
-**Tech Stack:** Swift 6, SwiftUI, iOS 17 deployment target, Xcode 26.6 / iOS 26.5 SDK, `supabase-swift` 2.51.0 (SPM), XcodeGen, Swift Testing (`import Testing`), Supabase (Postgres 17 + GoTrue), AuthenticationServices (native Sign in with Apple).
+**Tech Stack:** Swift 6, SwiftUI, iOS 17 deployment target, Xcode 26.6 / iOS 26.5 SDK, `supabase-swift` 2.51.0 (SPM), XcodeGen, Swift Testing (`import Testing`), Supabase (Postgres 17 + GoTrue).
 
 ## Global Constraints
 
@@ -31,7 +31,7 @@
 - Modify `Models/Models.swift` — add `username_set` to `Profile`; add `ProfileUpdate` encodable.
 - Create `Models/UsernameValidator.swift` — pure client-side format validation.
 - Create `Services/AuthError.swift` — `mapAuthError` + `UsernameStatus`.
-- Create `Services/AuthProviding.swift` — protocol + `AppleCredential` + nonce helpers.
+- Create `Services/AuthProviding.swift` — protocol + `AuthProviderError`.
 - Modify `Services/SupabaseService.swift` — conform to `AuthProviding`.
 - Rewrite `ViewModels/AuthViewModel.swift` — routing + provider methods + username flow.
 
@@ -285,8 +285,7 @@ git commit -m "test: add unit-test target and UsernameValidator"
   - `enum UsernameStatus: Equatable { case idle, checking, available, taken, invalid }`.
   - `func mapAuthError(_ error: Error) -> String`.
   - `protocol AuthProviding` (see Step 3).
-  - `struct AppleCredential { let idToken: String; let nonce: String }`.
-  - `enum AuthProviderError: Error { case cancelled }`.
+  - `enum AuthProviderError: Error, Equatable { case cancelled }`.
 
 - [ ] **Step 1: Add `usernameSet` + `ProfileUpdate` to `Models/Models.swift`**
 
@@ -381,17 +380,10 @@ func mapAuthError(_ error: Error) -> String {
 
 ```swift
 import Foundation
-import CryptoKit
 import Supabase
 
-/// Apple identity token + the raw nonce it was minted with.
-struct AppleCredential: Sendable {
-    let idToken: String
-    let nonce: String
-}
-
 /// Raised when the user cancels an interactive provider flow.
-enum AuthProviderError: Error {
+enum AuthProviderError: Error, Equatable {
     case cancelled
 }
 
@@ -403,38 +395,12 @@ protocol AuthProviding: Sendable {
 
     func signUpEmail(email: String, password: String) async throws
     func signInEmail(email: String, password: String) async throws
-    func signInWithApple(_ credential: AppleCredential) async throws
     func signInWithWebOAuth(_ provider: Provider) async throws
     func signOut() async throws
 
     func fetchProfile(userID: UUID) async throws -> Profile?
     func isUsernameAvailable(_ candidate: String) async throws -> Bool
     func setUsername(_ username: String, userID: UUID) async throws
-}
-
-/// Nonce helpers for Sign in with Apple.
-enum AppleNonce {
-    /// A random URL-safe nonce string.
-    static func random(length: Int = 32) -> String {
-        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
-        var result = ""
-        var remaining = length
-        while remaining > 0 {
-            let byte = UInt8.random(in: 0...255)
-            if Int(byte) < charset.count {
-                result.append(charset[Int(byte)])
-                remaining -= 1
-            }
-        }
-        return result
-    }
-
-    /// SHA256 hex digest, which is what Apple expects in the request nonce.
-    static func sha256(_ input: String) -> String {
-        SHA256.hash(data: Data(input.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
 }
 ```
 
@@ -476,7 +442,6 @@ actor MockAuthProvider: AuthProviding {
 
     func signUpEmail(email: String, password: String) async throws { try throwIfNeeded() }
     func signInEmail(email: String, password: String) async throws { try throwIfNeeded() }
-    func signInWithApple(_ credential: AppleCredential) async throws { try throwIfNeeded() }
     func signInWithWebOAuth(_ provider: Provider) async throws { try throwIfNeeded() }
     func signOut() async throws { try throwIfNeeded() }
 
@@ -518,7 +483,7 @@ git commit -m "feat(auth): AuthProviding protocol, error mapping, models, test m
 - Modify: `Services/SupabaseService.swift`
 
 **Interfaces:**
-- Consumes: `AuthProviding`, `Profile`, `ProfileUpdate`, `AppleCredential`, `AppSecrets`.
+- Consumes: `AuthProviding`, `Profile`, `ProfileUpdate`, `AppSecrets`.
 - Produces: `SupabaseService: AuthProviding` (the concrete client used by the app).
 
 - [ ] **Step 1: Replace `Services/SupabaseService.swift` with the conforming implementation**
@@ -557,16 +522,6 @@ final class SupabaseService: AuthProviding {
 
     func signInEmail(email: String, password: String) async throws {
         _ = try await client.auth.signIn(email: email, password: password)
-    }
-
-    func signInWithApple(_ credential: AppleCredential) async throws {
-        _ = try await client.auth.signInWithIdToken(
-            credentials: OpenIDConnectCredentials(
-                provider: .apple,
-                idToken: credential.idToken,
-                nonce: credential.nonce
-            )
-        )
     }
 
     func signInWithWebOAuth(_ provider: Provider) async throws {
@@ -629,7 +584,7 @@ Expected: `** BUILD SUCCEEDED **`. (Note: `AuthViewModel` still references the o
 
 ```bash
 git add Services/SupabaseService.swift
-git commit -m "feat(auth): SupabaseService conforms to AuthProviding (email/oauth/apple/profile)"
+git commit -m "feat(auth): SupabaseService conforms to AuthProviding (email/oauth/profile)"
 ```
 
 ---
@@ -646,7 +601,7 @@ git commit -m "feat(auth): SupabaseService conforms to AuthProviding (email/oaut
   - `enum AuthRoute { case signedOut, needsUsername, ready }`
   - `AuthViewModel.route: AuthRoute`
   - `AuthViewModel(provider: AuthProviding)` (default `SupabaseService.shared`)
-  - methods: `signUpEmail`, `signInEmail`, `signInWithApple(AppleCredential)`, `signInWithGoogle`, `signInWithDiscord`, `signOut`, `checkUsername(_:)`, `submitUsername(_:)`.
+  - methods: `signUpEmail`, `signInEmail`, `signInWithGoogle`, `signInWithDiscord`, `signOut`, `checkUsername(_:)`, `submitUsername(_:)`.
   - published: `session`, `profile`, `isLoading`, `errorMessage`, `usernameStatus`.
 
 - [ ] **Step 1: Write failing view-model tests**
@@ -785,10 +740,6 @@ final class AuthViewModel {
 
     func signInWithGoogle() async { await performOAuth { try await self.provider.signInWithWebOAuth(.google) } }
     func signInWithDiscord() async { await performOAuth { try await self.provider.signInWithWebOAuth(.discord) } }
-
-    func signInWithApple(_ credential: AppleCredential) async {
-        await performOAuth { try await self.provider.signInWithApple(credential) }
-    }
 
     func signOut() async {
         await perform { try await self.provider.signOut() }
@@ -1064,14 +1015,13 @@ git commit -m "feat(ui): Serene Light theme and reusable controls"
 - Rewrite: `Views/AuthView.swift`
 
 **Interfaces:**
-- Consumes: `AuthViewModel`, Theme, controls, `AppleCredential`, `AppleNonce`.
+- Consumes: `AuthViewModel`, Theme, controls.
 - Produces: `AuthView` (uses `@Environment(AuthViewModel.self)`).
 
 - [ ] **Step 1: Rewrite `Views/AuthView.swift`**
 
 ```swift
 import SwiftUI
-import AuthenticationServices
 
 struct AuthView: View {
     @Environment(AuthViewModel.self) private var auth
@@ -1079,7 +1029,6 @@ struct AuthView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var isSignUp = false
-    @State private var appleNonce = ""
 
     var body: some View {
         @Bindable var auth = auth
@@ -1120,7 +1069,6 @@ struct AuthView: View {
                                  systemMark: "g.circle.fill", markColor: .blue) {
                         Task { await auth.signInWithGoogle() }
                     }
-                    appleButton
                     SocialButton(label: "Continue with Discord",
                                  systemMark: "bubble.left.fill", markColor: .indigo) {
                         Task { await auth.signInWithDiscord() }
@@ -1137,30 +1085,6 @@ struct AuthView: View {
             .padding(24)
         }
         .background(Theme.cream.ignoresSafeArea())
-    }
-
-    private var appleButton: some View {
-        SignInWithAppleButton(.continue) { request in
-            let raw = AppleNonce.random()
-            appleNonce = raw
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = AppleNonce.sha256(raw)
-        } onCompletion: { result in
-            switch result {
-            case .success(let authResults):
-                guard
-                    let credential = authResults.credential as? ASAuthorizationAppleIDCredential,
-                    let tokenData = credential.identityToken,
-                    let token = String(data: tokenData, encoding: .utf8)
-                else { return }
-                Task { await auth.signInWithApple(AppleCredential(idToken: token, nonce: appleNonce)) }
-            case .failure:
-                break // user cancelled or dismissed — no-op
-            }
-        }
-        .signInWithAppleButtonStyle(.black)
-        .frame(height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.corner))
     }
 
     private func submit() async {
@@ -1191,7 +1115,7 @@ Expected: `** BUILD SUCCEEDED **`.
 
 ```bash
 git add Views/AuthView.swift
-git commit -m "feat(ui): Serene AuthView with email + Google/Apple/Discord"
+git commit -m "feat(ui): Serene AuthView with email + Google/Discord"
 ```
 
 ---
@@ -1542,7 +1466,9 @@ git commit -m "feat(auth): three-state routing, URL scheme, deep-link handling"
 
 ## Post-plan: OAuth provider enablement (human, after code merges)
 
-These light up the Google/Apple/Discord buttons; the code already handles them. See the design spec §8. Order: create OAuth apps in each provider console → paste client id/secret into Supabase dashboard (Authentication → Providers) → add `bibleshare://auth-callback` to the redirect allow-list → for Apple, enable the "Sign in with Apple" capability (requires paid Apple Developer account) and add it to `project.yml` entitlements. Then re-run the smoke test per provider.
+These light up the Google/Discord buttons; the code already handles them. See the design spec §8. Order: create OAuth apps in each provider console (Google Cloud, Discord Developer Portal) → paste client id/secret into Supabase dashboard (Authentication → Providers) → add `bibleshare://auth-callback` to the redirect allow-list. Then re-run the smoke test per provider.
+
+**Apple (deferred):** not built in this plan. When a paid Apple Developer account exists, add a native `SignInWithAppleButton` + `signInWithIdToken(provider: .apple, ...)` with a per-attempt SHA256 nonce, plus the "Sign in with Apple" capability in `project.yml` entitlements. App Store review requires this before shipping a build that offers Google/Discord.
 
 ---
 
@@ -1557,7 +1483,7 @@ These light up the Google/Apple/Discord buttons; the code already handles them. 
 - §3.5 autoconfirm → Task 1 Step 5 (corrected: dashboard toggle, not MCP). ✅
 - §4.1 AuthProviding → Task 3. ✅
 - §4.2 AuthViewModel → Task 5. ✅
-- §4.3 providers (email/google/discord/apple/deep-link) → Task 4 + Task 7 + Task 10. ✅
+- §4.3 providers (email/google/discord/deep-link; Apple deferred) → Task 4 + Task 7 + Task 10. ✅
 - §4.4 URL scheme config → Task 10. ✅
 - §5 theme/components/screens → Tasks 6–9. ✅
 - §6 error handling (map + oauth cancel + race) → Task 3 (map), Task 5 (cancel), DB unique index (race surfaces via mapAuthError). ✅
@@ -1566,4 +1492,4 @@ These light up the Google/Apple/Discord buttons; the code already handles them. 
 
 **Placeholder scan:** No TBD/TODO; all steps contain full code or exact commands. ✅
 
-**Type consistency:** `AuthProviding` method names match between protocol (Task 3), `SupabaseService` (Task 4), `MockAuthProvider` (Task 3), and `AuthViewModel` calls (Task 5): `signUpEmail`, `signInEmail`, `signInWithApple`, `signInWithWebOAuth`, `signOut`, `fetchProfile`, `isUsernameAvailable`, `setUsername`. `UsernameStatus` cases (`idle/checking/available/taken/invalid`) consistent across `AuthError.swift`, VM, and `UsernameSetupView`. `Profile.usernameSet` used consistently. ✅
+**Type consistency:** `AuthProviding` method names match between protocol (Task 3), `SupabaseService` (Task 4), `MockAuthProvider` (Task 3), and `AuthViewModel` calls (Task 5): `signUpEmail`, `signInEmail`, `signInWithWebOAuth`, `signOut`, `fetchProfile`, `isUsernameAvailable`, `setUsername`. `UsernameStatus` cases (`idle/checking/available/taken/invalid`) consistent across `AuthError.swift`, VM, and `UsernameSetupView`. `Profile.usernameSet` used consistently. ✅
