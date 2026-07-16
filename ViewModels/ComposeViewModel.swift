@@ -41,7 +41,7 @@ final class ComposeViewModel {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var canSubmit: Bool { !trimmedTitle.isEmpty && !isSubmitting }
+    var canSubmit: Bool { !trimmedTitle.isEmpty && !isSubmitting && pendingImages.count <= Self.maxImages }
     var canAddImage: Bool { pendingImages.count < Self.maxImages }
 
     // MARK: Attachments

@@ -58,6 +58,62 @@ struct ComposeViewModelTests {
         #expect(params.media.count == 2)
         #expect(params.media.map(\.position) == [0, 1])
         #expect(params.media.allSatisfy { $0.mediaType == .image })
+        #expect(uploader.deletedPaths.isEmpty, "a successful submit must never sweep the images the new post references")
+    }
+
+    @Test func submitPositionsLinksAfterImages() async throws {
+        let posts = FakePostService()
+        let uploader = FakeMediaUploader()
+        let vm = makeVM(posts: posts, uploader: uploader)
+        vm.title = "Photos and links"
+        vm.pendingImages = [ComposeImage(id: UUID(), jpeg: Data([0x1])),
+                            ComposeImage(id: UUID(), jpeg: Data([0x2]))]
+        vm.addLink(url: "https://example.com/a", title: "A")
+        vm.addLink(url: "https://example.com/b", title: "B")
+
+        let id = await vm.submit(userID: UUID())
+        #expect(id == posts.newPostID)
+
+        let params = try #require(posts.createdParams.first)
+        #expect(params.media.count == 4)
+
+        let images = params.media.filter { $0.mediaType == .image }
+        #expect(images.map(\.position).sorted() == [0, 1])
+
+        let linkItems = params.media.filter { $0.mediaType == .link }
+        #expect(linkItems.map(\.position) == [2, 3])
+        #expect(linkItems.map(\.url) == ["https://example.com/a", "https://example.com/b"])
+    }
+
+    @Test func submitPositionsLinksFromZeroWhenNoImages() async throws {
+        let posts = FakePostService()
+        let vm = makeVM(posts: posts)
+        vm.title = "Links only"
+        vm.addLink(url: "https://example.com/a", title: "A")
+        vm.addLink(url: "https://example.com/b", title: "B")
+
+        _ = await vm.submit(userID: UUID())
+
+        let params = try #require(posts.createdParams.first)
+        let linkItems = params.media.filter { $0.mediaType == .link }
+        #expect(linkItems.map(\.position) == [0, 1])
+    }
+
+    @Test func cannotSubmitWithMoreThanMaxImages() async {
+        let posts = FakePostService()
+        let uploader = FakeMediaUploader()
+        let vm = makeVM(posts: posts, uploader: uploader)
+        vm.title = "Too many photos"
+        for _ in 0..<(ComposeViewModel.maxImages + 1) {
+            vm.pendingImages.append(ComposeImage(id: UUID(), jpeg: Data([0x1])))
+        }
+
+        #expect(vm.canSubmit == false)
+
+        let id = await vm.submit(userID: UUID())
+        #expect(id == nil)
+        #expect(posts.createdParams.isEmpty)
+        #expect(uploader.uploadCount == 0)
     }
 
     /// The orphan-free contract from spec §5.1: if the RPC fails after uploads
