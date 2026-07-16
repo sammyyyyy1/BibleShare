@@ -31,7 +31,12 @@ final class FeedService: FeedServicing {
             .eq("author_id", value: authorID.uuidString)
 
         if let before {
-            query = query.lt("created_at", value: ISO8601DateFormatter().string(from: before))
+            // Pass the Date directly so supabase-swift's own PostgrestFilterValue
+            // conformance formats it with fractional seconds — created_at is a
+            // microsecond-precision timestamptz, and a default ISO8601DateFormatter
+            // (whole seconds only) would move the cursor earlier than the true
+            // instant, silently skipping posts in the truncated sub-second gap.
+            query = query.lt("created_at", value: before)
         }
 
         return try await query
