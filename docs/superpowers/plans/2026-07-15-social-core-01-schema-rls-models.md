@@ -292,8 +292,14 @@ create index if not exists group_checkins_post_idx on public.group_checkins(post
 
 ```sql
 do $$
-declare gid uuid; uid uuid := gen_random_uuid(); wid uuid; pid uuid;
+declare uid uuid := gen_random_uuid(); gid uuid; wid uuid; pid uuid;
 begin
+  -- creator_id / author_id / user_id are FKs to auth.users, so create a real
+  -- ephemeral user first (the handle_new_user trigger also makes its profile).
+  insert into auth.users (id, instance_id, aud, role, email)
+    values (uid, '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+            't3_'||substr(uid::text,1,8)||'@test.dev');
+
   insert into public.groups (creator_id, name) values (uid, 'G') returning id into gid;
   insert into public.group_checkin_windows (group_id, opens_at)
     values (gid, now()) returning id into wid;
@@ -307,12 +313,11 @@ begin
     raise notice 'ok: one check-in per user per window enforced';
   end;
 
-  delete from public.groups where id = gid;   -- cascades to windows/checkins
-  delete from public.posts where id = pid;
+  delete from auth.users where id = uid;   -- cascades to profile/group/window/post/checkin
 end $$;
 ```
 
-Expected: `ok: one check-in per user per window enforced`, no error.
+Expected: `ok: one check-in per user per window enforced`, no error. (The ephemeral `auth.users` insert + cascade-delete pattern is confirmed working against this project.)
 
 - [ ] **Step 4: Commit**
 
