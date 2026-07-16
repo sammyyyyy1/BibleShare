@@ -13,6 +13,10 @@ final class FakePostService: PostServicing, @unchecked Sendable {
     var comments: [CommentItem] = []
     let newPostID = UUID()
 
+    /// Fires mid-flight inside `setLike`, before success/failure is decided —
+    /// lets tests observe optimistic UI state while the "server call" is in flight.
+    var onSetLike: (@MainActor () -> Void)?
+
     func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID {
         createdParams.append(params)
         if let createError { throw createError }
@@ -24,6 +28,7 @@ final class FakePostService: PostServicing, @unchecked Sendable {
     }
     func setLike(postID: UUID, userID: UUID, liked: Bool) async throws {
         likeCalls.append((postID, liked))
+        await onSetLike?()
         if let likeError { throw likeError }
     }
     func fetchComments(postID: UUID) async throws -> [CommentItem] { comments }
@@ -67,8 +72,14 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     var liked: Set<UUID> = []
     var error: Error?
     private(set) var fetchCount = 0
+    /// Records the `before` cursor passed on every call, in order, so paging
+    /// tests can verify which cursor was actually sent (not just that a call happened).
+    private(set) var receivedCursors: [Date?] = []
+    private(set) var receivedLimits: [Int] = []
 
     func fetchTimeline(authorID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
+        receivedCursors.append(before)
+        receivedLimits.append(limit)
         if let error { throw error }
         defer { fetchCount += 1 }
         return fetchCount < pages.count ? pages[fetchCount] : []
