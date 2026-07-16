@@ -8,7 +8,7 @@ final class FeedService: FeedServicing {
     /// only visibility gate — this query adds no auth logic of its own.
     private static let feedSelect = """
     id,author_id,title,body,created_at,\
-    author:profiles(*),\
+    author:profiles!posts_author_id_profiles_fkey(*),\
     post_verses(*),\
     post_media(*),\
     post_tags(post_id,tagged_user_id,created_at,profiles(*)),\
