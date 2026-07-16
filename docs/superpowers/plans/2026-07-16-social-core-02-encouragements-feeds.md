@@ -189,7 +189,7 @@ git commit -m "feat(db): private media bucket with visibility-tracking read poli
 - Create: `supabase/migrations/20260716010100_create_encouragement_rpc.sql`
 
 **Interfaces:**
-- Produces (DB): `public.create_encouragement(p_title text, p_body text, p_shared_to_timeline boolean, p_verses jsonb, p_media jsonb, p_tag_user_ids uuid[]) returns uuid`, executable by `authenticated`.
+- Produces (DB): `public.create_encouragement(p_title text, p_body text, p_shared_to_timeline boolean, p_verses jsonb, p_media jsonb, p_tag_user_ids uuid[]) returns uuid`, executable by `authenticated`; CHECK `post_verses_range_valid`.
 - Consumed by: Task 5's `PostService.createEncouragement`, whose `CreateEncouragementParams` `CodingKeys` must match these parameter names exactly.
 
 - [ ] **Step 1: Write the migration file**
@@ -197,6 +197,12 @@ git commit -m "feat(db): private media bucket with visibility-tracking read poli
 `supabase/migrations/20260716010100_create_encouragement_rpc.sql`:
 
 ```sql
+-- Verse range sanity. Deferred to "when compose lands" by the Plan 1 final
+-- review; compose is the first writer of these rows, so it lands here.
+alter table public.post_verses drop constraint if exists post_verses_range_valid;
+alter table public.post_verses add constraint post_verses_range_valid
+  check (chapter > 0 and verse_start > 0 and verse_end >= verse_start);
+
 -- Atomic compose: one posts row + its verses/media/tags, in a single transaction.
 -- SECURITY DEFINER is safe here because author_id is derived from auth.uid() and
 -- is never a parameter — a caller cannot author as anyone else.
@@ -392,12 +398,32 @@ rollback;
 
 Expected: `ok: blank title rejected`, `ok: foreign-folder image rejected`, `authored_by_caller=1`.
 
-- [ ] **Step 6: Check security advisors**
+- [ ] **Step 6: Verify the verse-range CHECK rejects an inverted range**
+
+Call `mcp__supabase__execute_sql`:
+
+```sql
+do $$
+begin
+  begin
+    insert into public.post_verses
+      (post_id, book, chapter, verse_start, verse_end, reference_label, text_snapshot)
+    values (gen_random_uuid(), 'John', 3, 17, 16, 'John 3:17-16', 't');
+    raise exception 'CHECK DID NOT FIRE';
+  exception when check_violation then
+    raise notice 'ok: inverted verse range rejected';
+  end;
+end $$;
+```
+
+Expected: `NOTICE: ok: inverted verse range rejected`. (The `post_id` FK is not reached because the CHECK fails first.)
+
+- [ ] **Step 7: Check security advisors**
 
 Call `mcp__supabase__get_advisors` with `type:"security"`.
 Expected: no "function search_path mutable" lint for `create_encouragement`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/20260716010100_create_encouragement_rpc.sql
