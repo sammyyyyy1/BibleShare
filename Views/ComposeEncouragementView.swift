@@ -27,8 +27,8 @@ struct ComposeEncouragementView: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.corner))
                     }
 
-                    SereneTextField(title: "Title (required)", text: $vm.title)
-                        .textInputAutocapitalization(.sentences)
+                    SereneTextField(title: "Title (required)", text: $vm.title,
+                                     autocapitalization: .sentences)
 
                     TextEditor(text: $vm.body)
                         .frame(minHeight: 110)

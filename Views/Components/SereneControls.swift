@@ -5,12 +5,13 @@ struct SereneTextField: View {
     @Binding var text: String
     var keyboard: UIKeyboardType = .default
     var content: UITextContentType?
+    var autocapitalization: TextInputAutocapitalization = .never
 
     var body: some View {
         TextField(title, text: $text)
             .keyboardType(keyboard)
             .textContentType(content)
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(autocapitalization)
             .autocorrectionDisabled()
             .padding(12)
             .background(Theme.field)

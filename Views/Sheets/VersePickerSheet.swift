@@ -23,8 +23,8 @@ struct VersePickerSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
-                SereneTextField(title: "Book (e.g. John)", text: $book)
-                    .textInputAutocapitalization(.words)
+                SereneTextField(title: "Book (e.g. John)", text: $book,
+                                 autocapitalization: .words)
                 HStack(spacing: 10) {
                     SereneTextField(title: "Chapter", text: $chapter, keyboard: .numberPad)
                     SereneTextField(title: "Verse", text: $verseStart, keyboard: .numberPad)

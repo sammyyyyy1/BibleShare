@@ -15,6 +15,7 @@ struct MediaStrip: View {
                             RemoteImage(path: item.url)
                                 .frame(width: 200, height: 150)
                                 .clipShape(RoundedRectangle(cornerRadius: Theme.corner))
+                                .accessibilityLabel("Photo attached to this post")
                         }
                     }
                 }

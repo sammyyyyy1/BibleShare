@@ -76,6 +76,8 @@ struct PostCell: View {
                         .foregroundStyle(item.isLiked ? Theme.danger : Theme.muted)
                     Text("\(item.likeCount)").font(.caption).foregroundStyle(Theme.muted)
                 }
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(item.isLiked ? "Unlike" : "Like")
@@ -85,6 +87,8 @@ struct PostCell: View {
                     Image(systemName: "bubble.right").foregroundStyle(Theme.muted)
                     Text("\(item.commentCount)").font(.caption).foregroundStyle(Theme.muted)
                 }
+                .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Comments")

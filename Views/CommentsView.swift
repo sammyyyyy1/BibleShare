@@ -46,8 +46,8 @@ struct CommentsView: View {
 
                 Divider().overlay(Theme.hairline)
                 HStack(spacing: 8) {
-                    SereneTextField(title: "Add a comment", text: $vm.draft)
-                        .textInputAutocapitalization(.sentences)
+                    SereneTextField(title: "Add a comment", text: $vm.draft,
+                                     autocapitalization: .sentences)
                     Button {
                         Task { await vm.send(postID: postID, userID: userID) }
                     } label: {
