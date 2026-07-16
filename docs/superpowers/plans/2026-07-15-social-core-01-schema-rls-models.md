@@ -292,8 +292,14 @@ create index if not exists group_checkins_post_idx on public.group_checkins(post
 
 ```sql
 do $$
-declare gid uuid; uid uuid := gen_random_uuid(); wid uuid; pid uuid;
+declare uid uuid := gen_random_uuid(); gid uuid; wid uuid; pid uuid;
 begin
+  -- creator_id / author_id / user_id are FKs to auth.users, so create a real
+  -- ephemeral user first (the handle_new_user trigger also makes its profile).
+  insert into auth.users (id, instance_id, aud, role, email)
+    values (uid, '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+            't3_'||substr(uid::text,1,8)||'@test.dev');
+
   insert into public.groups (creator_id, name) values (uid, 'G') returning id into gid;
   insert into public.group_checkin_windows (group_id, opens_at)
     values (gid, now()) returning id into wid;
@@ -307,12 +313,11 @@ begin
     raise notice 'ok: one check-in per user per window enforced';
   end;
 
-  delete from public.groups where id = gid;   -- cascades to windows/checkins
-  delete from public.posts where id = pid;
+  delete from auth.users where id = uid;   -- cascades to profile/group/window/post/checkin
 end $$;
 ```
 
-Expected: `ok: one check-in per user per window enforced`, no error.
+Expected: `ok: one check-in per user per window enforced`, no error. (The ephemeral `auth.users` insert + cascade-delete pattern is confirmed working against this project.)
 
 - [ ] **Step 4: Commit**
 
@@ -737,11 +742,11 @@ on conflict do nothing;
 
 -- Alice: one personal-timeline encouragement, one group encouragement.
 insert into public.posts (id, author_id, kind, title, shared_to_timeline) values
-  ('99999999-0000-0000-0000-0000000000t1','aaaaaaaa-0000-0000-0000-000000000001','encouragement','Timeline Post',true),
-  ('99999999-0000-0000-0000-0000000000g1','aaaaaaaa-0000-0000-0000-000000000001','encouragement','Group Post',false)
+  ('99999990-0000-0000-0000-000000000001','aaaaaaaa-0000-0000-0000-000000000001','encouragement','Timeline Post',true),
+  ('99999990-0000-0000-0000-000000000002','aaaaaaaa-0000-0000-0000-000000000001','encouragement','Group Post',false)
 on conflict (id) do nothing;
 insert into public.post_groups (post_id, group_id)
-values ('99999999-0000-0000-0000-0000000000g1','11111111-0000-0000-0000-0000000000aa')
+values ('99999990-0000-0000-0000-000000000002','11111111-0000-0000-0000-0000000000aa')
 on conflict do nothing;
 
 select 'seeded' as status;
@@ -759,8 +764,8 @@ begin;
   select set_config('request.jwt.claims',
     '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}', true);
   select
-    (select count(*) from public.posts where id='99999999-0000-0000-0000-0000000000t1') as sees_timeline, -- 1
-    (select count(*) from public.posts where id='99999999-0000-0000-0000-0000000000g1') as sees_group;    -- 1
+    (select count(*) from public.posts where id='99999990-0000-0000-0000-000000000001') as sees_timeline, -- 1
+    (select count(*) from public.posts where id='99999990-0000-0000-0000-000000000002') as sees_group;    -- 1
 rollback;
 ```
 
@@ -776,8 +781,8 @@ begin;
   select set_config('request.jwt.claims',
     '{"sub":"cccccccc-0000-0000-0000-000000000003","role":"authenticated"}', true);
   select
-    (select count(*) from public.posts where id='99999999-0000-0000-0000-0000000000t1') as sees_timeline, -- 0
-    (select count(*) from public.posts where id='99999999-0000-0000-0000-0000000000g1') as sees_group;    -- 0
+    (select count(*) from public.posts where id='99999990-0000-0000-0000-000000000001') as sees_timeline, -- 0
+    (select count(*) from public.posts where id='99999990-0000-0000-0000-000000000002') as sees_group;    -- 0
 rollback;
 ```
 
@@ -794,11 +799,11 @@ begin;
     '{"sub":"cccccccc-0000-0000-0000-000000000003","role":"authenticated"}', true);
   -- Carol authors a post (allowed), then tries to target Alice's group (must be denied by RLS).
   insert into public.posts (id, author_id, kind, title)
-    values ('99999999-0000-0000-0000-00000000cx1','cccccccc-0000-0000-0000-000000000003','encouragement','X');
+    values ('99999990-0000-0000-0000-0000000000c9','cccccccc-0000-0000-0000-000000000003','encouragement','X');
   do $$
   begin
     insert into public.post_groups (post_id, group_id)
-      values ('99999999-0000-0000-0000-00000000cx1','11111111-0000-0000-0000-0000000000aa');
+      values ('99999990-0000-0000-0000-0000000000c9','11111111-0000-0000-0000-0000000000aa');
     raise exception 'RLS DID NOT BLOCK';
   exception when insufficient_privilege then
     raise notice 'ok: non-member cannot post to group';
@@ -884,7 +889,7 @@ struct PostModelTests {
 
     @Test func decodesEncouragement() throws {
         let json = """
-        {"id":"99999999-0000-0000-0000-0000000000t1",
+        {"id":"99999990-0000-0000-0000-000000000001",
          "author_id":"aaaaaaaa-0000-0000-0000-000000000001",
          "kind":"encouragement","title":"Be strong","body":"Joshua 1:9",
          "shared_to_timeline":true,"created_at":"2026-07-15T12:00:00.000Z"}
@@ -1259,7 +1264,7 @@ struct SocialModelTests {
     @Test func decodesVerseRange() throws {
         let json = """
         {"id":"33333333-0000-0000-0000-0000000000cc",
-         "post_id":"99999999-0000-0000-0000-0000000000g1",
+         "post_id":"99999990-0000-0000-0000-000000000002",
          "translation":"WEB","book":"John","chapter":3,
          "verse_start":16,"verse_end":17,"reference_label":"John 3:16–17",
          "text_snapshot":"For God so loved the world...","position":0}
