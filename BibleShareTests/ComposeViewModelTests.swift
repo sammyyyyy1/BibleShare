@@ -136,6 +136,42 @@ struct ComposeViewModelTests {
         #expect(vm.isSubmitting == false)
     }
 
+    /// Reviewer-flagged gap: `failedSubmitDeletesUploadedImagesAndKeepsDraft` only
+    /// covers the sweep succeeding. When BOTH the RPC and the compensating
+    /// delete fail, the sweep failure must be logged (not asserted here — it's
+    /// not observable from a unit test) but never surfacer to the user in place
+    /// of the original error, and the function must not throw up the call stack.
+    @Test func failedSubmitLogsWhenTheCompensatingSweepAlsoFails() async {
+        // Distinct `description`s so each maps to a distinct PostError message —
+        // this lets the test prove which error the user actually sees, rather
+        // than both errors falling into the same generic fallback string.
+        struct RPCFailure: Error, CustomStringConvertible {
+            var description: String { "title is required" }
+        }
+        struct SweepFailure: Error, CustomStringConvertible {
+            var description: String { "own storage folder" }
+        }
+        let posts = FakePostService()
+        posts.createError = RPCFailure()
+        let uploader = FakeMediaUploader()
+        uploader.deleteError = SweepFailure()
+        let vm = makeVM(posts: posts, uploader: uploader)
+        vm.title = "Doomed twice"
+        vm.pendingImages = [ComposeImage(id: UUID(), jpeg: Data([0x1]))]
+
+        let id = await vm.submit(userID: UUID())
+
+        #expect(id == nil)
+        #expect(uploader.deleteCallCount == 1, "the sweep must still be attempted even though it will fail")
+        #expect(uploader.deletedPaths.isEmpty, "a failed sweep must not record paths as deleted")
+        #expect(vm.title == "Doomed twice", "the draft must survive even a doubly-failed submit")
+        #expect(vm.errorMessage == PostError.message(for: RPCFailure()),
+                "the user-facing error must reflect the ORIGINAL create failure")
+        #expect(vm.errorMessage != PostError.message(for: SweepFailure()),
+                "the sweep failure must never override the original error shown to the user")
+        #expect(vm.isSubmitting == false)
+    }
+
     @Test func addVerseFetchesSnapshotAndLabel() async throws {
         let bible = FakeBibleService()
         let vm = makeVM(bible: bible)

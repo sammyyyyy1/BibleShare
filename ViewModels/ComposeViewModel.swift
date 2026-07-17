@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// An image picked but not yet uploaded. Held as encoded JPEG bytes so the
 /// ViewModel stays free of UIKit and is testable.
@@ -132,7 +133,16 @@ final class ComposeViewModel {
             return try await posts.createEncouragement(params)
         } catch {
             // Compensating delete: without this, every failed submit strands objects.
-            try? await uploader.delete(paths: uploadedPaths)
+            // If the sweep itself also fails, log it (there is no cleanup job
+            // anywhere in this system, so a silent failure here orphans the
+            // objects permanently) but surface the ORIGINAL error to the user —
+            // they care that their post failed to send, not that cleanup did too.
+            do {
+                try await uploader.delete(paths: uploadedPaths)
+            } catch let sweepError {
+                Logger(subsystem: "com.bibleshare.app", category: "compose")
+                    .error("Failed to sweep orphaned upload(s) \(uploadedPaths) after a failed submit: \(sweepError)")
+            }
             errorMessage = PostError.message(for: error)
             return nil
         }

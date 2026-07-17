@@ -90,15 +90,48 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     private(set) var receivedCursors: [Date?] = []
     private(set) var receivedLimits: [Int] = []
 
+    /// When set, the NEXT call to `fetchTimeline` suspends indefinitely (instead
+    /// of returning) until the test calls `resumeSuspendedFetch()`. Resets itself
+    /// after triggering once. Defaults to false, so every other test/use of this
+    /// fake is unaffected. Lets tests put a call genuinely in flight to exercise
+    /// concurrency guards, rather than merely sequencing calls.
+    var suspendNextFetch = false
+    private var suspensionContinuation: CheckedContinuation<Void, Never>?
+    private var enteredFlightContinuation: CheckedContinuation<Void, Never>?
+
     func fetchTimeline(authorID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
         receivedCursors.append(before)
         receivedLimits.append(limit)
+        if suspendNextFetch {
+            suspendNextFetch = false
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                suspensionContinuation = continuation
+                enteredFlightContinuation?.resume()
+                enteredFlightContinuation = nil
+            }
+        }
         if let error { throw error }
         defer { fetchCount += 1 }
         return fetchCount < pages.count ? pages[fetchCount] : []
     }
     func likedPostIDs(userID: UUID, among ids: [UUID]) async throws -> Set<UUID> {
         liked.intersection(ids)
+    }
+
+    /// Suspends the caller until a fetch armed via `suspendNextFetch` has
+    /// actually been entered (and thus is genuinely in flight), avoiding a
+    /// racy `Task.yield()` guess at timing.
+    func waitUntilFetchIsInFlight() async {
+        guard suspensionContinuation == nil else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            enteredFlightContinuation = continuation
+        }
+    }
+
+    /// Resumes a fetch suspended via `suspendNextFetch`. No-op if nothing is waiting.
+    func resumeSuspendedFetch() {
+        suspensionContinuation?.resume()
+        suspensionContinuation = nil
     }
 }
 

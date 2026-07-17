@@ -21,6 +21,7 @@ final class TimelineViewModel {
     }
 
     func load(userID: UUID) async {
+        guard !isLoading, !isLoadingMore else { return }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }

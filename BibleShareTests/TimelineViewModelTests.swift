@@ -220,6 +220,53 @@ struct TimelineViewModelTests {
         #expect(vm.errorMessage != nil)
     }
 
+    /// Reviewer-flagged race: `load()` had no in-flight guard, unlike `loadMore()`.
+    /// Concretely — a pull-to-refresh while `loadMore()` is still awaiting its
+    /// fetch must be a no-op, not a replace that a slow `loadMore()` append would
+    /// then land on top of. This puts a real `loadMore()` call genuinely in
+    /// flight (suspended mid-`await`, not just called-and-returned) before
+    /// calling `load()`, so the guard is exercised against actual concurrency.
+    @Test func loadDoesNothingWhileLoadMoreIsInFlight() async throws {
+        let now = Date()
+        let page1 = try (0..<TimelineViewModel.pageSize).map { i in
+            try FeedItemFactory.make(title: "P1-\(i)", createdAt: now.addingTimeInterval(-Double(i) * 60))
+        }
+        let page2 = try (0..<2).map { i in
+            try FeedItemFactory.make(title: "P2-\(i)",
+                                     createdAt: now.addingTimeInterval(-Double(TimelineViewModel.pageSize + i) * 60))
+        }
+        let feed = FakeFeedService()
+        feed.pages = [page1, page2]
+        let vm = TimelineViewModel(feed: feed, posts: FakePostService())
+
+        await vm.load(userID: UUID())
+        #expect(vm.items.count == TimelineViewModel.pageSize)
+
+        // Arm the fake so the SECOND fetch (loadMore's) suspends mid-flight,
+        // then kick loadMore off in the background and wait until it has
+        // genuinely entered that suspended fetch.
+        feed.suspendNextFetch = true
+        let loadMoreTask = Task { await vm.loadMore(userID: UUID()) }
+        await feed.waitUntilFetchIsInFlight()
+
+        // loadMore's fetch is now suspended awaiting our resume, i.e. genuinely
+        // in flight (isLoadingMore == true). A refresh landing here must be a
+        // no-op rather than racing it.
+        await vm.load(userID: UUID())
+        #expect(vm.items.count == TimelineViewModel.pageSize,
+                "load() must not replace items while loadMore() is in flight")
+        #expect(vm.items.map(\.title) == page1.map(\.title),
+                "load() must not have touched items at all while the guard held")
+
+        // Let loadMore's suspended fetch resolve and confirm it still completes
+        // correctly afterward — the guard only blocks the racing refresh, not
+        // the in-flight call itself.
+        feed.resumeSuspendedFetch()
+        await loadMoreTask.value
+        #expect(vm.items.count == TimelineViewModel.pageSize + 2)
+        #expect(vm.items.suffix(2).map(\.title) == ["P2-0", "P2-1"])
+    }
+
     @Test func insertPutsNewPostOnTop() async throws {
         let existing = try FeedItemFactory.make(title: "Old")
         let feed = FakeFeedService()
