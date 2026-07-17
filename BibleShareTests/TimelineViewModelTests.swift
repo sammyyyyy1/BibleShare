@@ -181,6 +181,27 @@ struct TimelineViewModelTests {
         await vm.delete(itemID: item.id)
         #expect(vm.items.isEmpty)
         #expect(posts.deletedPosts == [item.id])
+        #expect(posts.deletedImagePaths == [[]], "an item with no images must sweep an empty path list")
+    }
+
+    /// Proves the sweep actually happens, and with the right paths — not just
+    /// that the item disappears from the list.
+    @Test func deleteSweepsTheDeletedPostsImages() async throws {
+        let imageURL = "someuid/pic.jpg"
+        let media = PostMedia(id: UUID(), postID: UUID(), mediaType: .image, url: imageURL,
+                               thumbnailURL: nil, title: nil, description: nil, position: 0)
+        let item = try FeedItemFactory.make(media: [media])
+        let feed = FakeFeedService()
+        feed.pages = [[item]]
+        let posts = FakePostService()
+        let vm = TimelineViewModel(feed: feed, posts: posts)
+        await vm.load(userID: UUID())
+
+        await vm.delete(itemID: item.id)
+
+        #expect(posts.deletedImagePaths == [[imageURL]])
+        #expect(posts.deletedPosts == [item.id])
+        #expect(vm.items.isEmpty)
     }
 
     /// The item must be removed ONLY after the server call succeeds.

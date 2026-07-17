@@ -8,6 +8,7 @@ final class FakePostService: PostServicing, @unchecked Sendable {
     var likeError: Error?
     private(set) var createdParams: [CreateEncouragementParams] = []
     private(set) var deletedPosts: [UUID] = []
+    private(set) var deletedImagePaths: [[String]] = []
     private(set) var likeCalls: [(postID: UUID, liked: Bool)] = []
     private(set) var addedComments: [(postID: UUID, content: String)] = []
     var comments: [CommentItem] = []
@@ -22,9 +23,10 @@ final class FakePostService: PostServicing, @unchecked Sendable {
         if let createError { throw createError }
         return newPostID
     }
-    func deletePost(id: UUID) async throws {
+    func deletePost(id: UUID, imagePaths: [String]) async throws {
         if let deleteError { throw deleteError }
         deletedPosts.append(id)
+        deletedImagePaths.append(imagePaths)
     }
     func setLike(postID: UUID, userID: UUID, liked: Bool) async throws {
         likeCalls.append((postID, liked))
@@ -96,12 +98,23 @@ enum FeedItemFactory {
                      title: String = "Title",
                      createdAt: Date = Date(),
                      likeCount: Int = 0,
-                     isLiked: Bool = false) throws -> FeedItem {
+                     isLiked: Bool = false,
+                     media: [PostMedia] = []) throws -> FeedItem {
+        let mediaJSON = media.map { m -> String in
+            let thumbnail = m.thumbnailURL.map { "\"\($0)\"" } ?? "null"
+            let mediaTitle = m.title.map { "\"\($0)\"" } ?? "null"
+            let description = m.description.map { "\"\($0)\"" } ?? "null"
+            return """
+            {"id":"\(m.id.uuidString.lowercased())","post_id":"\(m.postID.uuidString.lowercased())",\
+            "media_type":"\(m.mediaType.rawValue)","url":"\(m.url)","thumbnail_url":\(thumbnail),\
+            "title":\(mediaTitle),"description":\(description),"position":\(m.position)}
+            """
+        }.joined(separator: ",")
         let json = """
         {"id":"\(id.uuidString.lowercased())","author_id":"\(authorID.uuidString.lowercased())",
          "title":"\(title)","body":null,
          "created_at":"\(ISO8601DateFormatter().string(from: createdAt))",
-         "author":null,"post_verses":[],"post_media":[],"post_tags":[],
+         "author":null,"post_verses":[],"post_media":[\(mediaJSON)],"post_tags":[],
          "likes":[{"count":\(likeCount)}],"comments":[{"count":0}]}
         """.data(using: .utf8)!
         var item = try TestDecoder.postgrest().decode(FeedItem.self, from: json)

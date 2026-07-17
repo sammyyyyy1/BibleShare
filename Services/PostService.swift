@@ -5,16 +5,26 @@ final class PostService: PostServicing {
     static let shared = PostService()
 
     private let client: SupabaseClient
+    private let media: MediaUploading
 
-    init(client: SupabaseClient = SupabaseService.shared.client) {
+    init(client: SupabaseClient = SupabaseService.shared.client,
+         media: MediaUploading = MediaUploader.shared) {
         self.client = client
+        self.media = media
     }
 
     func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID {
         try await client.rpc("create_encouragement", params: params).execute().value
     }
 
-    func deletePost(id: UUID) async throws {
+    func deletePost(id: UUID, imagePaths: [String]) async throws {
+        // Storage-first: if the sweep fails, the post (and its images) survives
+        // and the user can retry — there is no cleanup job anywhere in this
+        // system, so a silent leak here is permanent. Only delete the row once
+        // the images are actually gone.
+        if !imagePaths.isEmpty {
+            try await media.delete(paths: imagePaths)
+        }
         try await client.from("posts").delete().eq("id", value: id.uuidString).execute()
     }
 

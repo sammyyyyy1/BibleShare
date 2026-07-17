@@ -5,7 +5,7 @@ import Foundation
 
 protocol PostServicing: Sendable {
     func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID
-    func deletePost(id: UUID) async throws
+    func deletePost(id: UUID, imagePaths: [String]) async throws
     func setLike(postID: UUID, userID: UUID, liked: Bool) async throws
     func fetchComments(postID: UUID) async throws -> [CommentItem]
     func addComment(postID: UUID, userID: UUID, content: String) async throws

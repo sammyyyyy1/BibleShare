@@ -80,8 +80,9 @@ final class TimelineViewModel {
     }
 
     func delete(itemID: UUID) async {
+        let imagePaths = items.first(where: { $0.id == itemID })?.images.map(\.url) ?? []
         do {
-            try await posts.deletePost(id: itemID)
+            try await posts.deletePost(id: itemID, imagePaths: imagePaths)
             items.removeAll { $0.id == itemID }
         } catch {
             errorMessage = PostError.message(for: error)
