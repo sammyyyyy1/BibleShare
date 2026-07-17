@@ -41,15 +41,26 @@ final class FakePostService: PostServicing, @unchecked Sendable {
 
 final class FakeMediaUploader: MediaUploading, @unchecked Sendable {
     var uploadError: Error?
+    var deleteError: Error?
     private(set) var uploadCount = 0
+    private(set) var deleteCallCount = 0
     private(set) var deletedPaths: [String] = []
+    /// Fires as `delete` is invoked, before success/failure is decided — lets
+    /// tests record a shared event timeline to prove call ordering against
+    /// whatever happens after `media.delete` returns.
+    var onDelete: (() -> Void)?
 
     func upload(_ jpeg: Data, userID: UUID) async throws -> String {
         if let uploadError { throw uploadError }
         uploadCount += 1
         return "\(userID.uuidString.lowercased())/img\(uploadCount).jpg"
     }
-    func delete(paths: [String]) async throws { deletedPaths.append(contentsOf: paths) }
+    func delete(paths: [String]) async throws {
+        deleteCallCount += 1
+        onDelete?()
+        if let deleteError { throw deleteError }
+        deletedPaths.append(contentsOf: paths)
+    }
     func signedURL(path: String) async throws -> URL { URL(string: "https://example.com/\(path)")! }
 }
 

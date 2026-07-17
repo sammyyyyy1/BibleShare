@@ -6,11 +6,19 @@ final class PostService: PostServicing {
 
     private let client: SupabaseClient
     private let media: MediaUploading
+    /// Deletes the `posts` row for the given id. Defaults to the real network
+    /// call; unit tests substitute a fake so the storage-before-row ordering in
+    /// `deletePost` can be proven without a reachable Supabase backend.
+    private let deleteRow: @Sendable (UUID) async throws -> Void
 
     init(client: SupabaseClient = SupabaseService.shared.client,
-         media: MediaUploading = MediaUploader.shared) {
+         media: MediaUploading = MediaUploader.shared,
+         deleteRow: (@Sendable (UUID) async throws -> Void)? = nil) {
         self.client = client
         self.media = media
+        self.deleteRow = deleteRow ?? { id in
+            try await client.from("posts").delete().eq("id", value: id.uuidString).execute()
+        }
     }
 
     func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID {
@@ -25,7 +33,7 @@ final class PostService: PostServicing {
         if !imagePaths.isEmpty {
             try await media.delete(paths: imagePaths)
         }
-        try await client.from("posts").delete().eq("id", value: id.uuidString).execute()
+        try await deleteRow(id)
     }
 
     func setLike(postID: UUID, userID: UUID, liked: Bool) async throws {
