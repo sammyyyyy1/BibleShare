@@ -99,7 +99,7 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     private var suspensionContinuation: CheckedContinuation<Void, Never>?
     private var enteredFlightContinuation: CheckedContinuation<Void, Never>?
 
-    func fetchTimeline(authorID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
+    func fetchTimeline(before: Date?, limit: Int) async throws -> [FeedItem] {
         receivedCursors.append(before)
         receivedLimits.append(limit)
         if suspendNextFetch {

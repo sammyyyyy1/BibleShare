@@ -26,7 +26,7 @@ final class TimelineViewModel {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let page = try await feed.fetchTimeline(authorID: userID, before: nil, limit: Self.pageSize)
+            let page = try await feed.fetchTimeline(before: nil, limit: Self.pageSize)
             items = try await markLiked(page, userID: userID)
             hasMore = page.count == Self.pageSize
         } catch {
@@ -39,7 +39,7 @@ final class TimelineViewModel {
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
-            let page = try await feed.fetchTimeline(authorID: userID, before: cursor, limit: Self.pageSize)
+            let page = try await feed.fetchTimeline(before: cursor, limit: Self.pageSize)
             items += try await markLiked(page, userID: userID)
             hasMore = page.count == Self.pageSize
         } catch {
