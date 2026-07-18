@@ -24,9 +24,23 @@ protocol MediaUploading: Sendable {
 }
 
 protocol UsernameResolving: Sendable {
-    /// Exact match only. Plan 2 deliberately exposes no prefix/fuzzy search;
-    /// friend-scoped search arrives in Plan 3.
+    /// Exact match only, routed through the `find_profile_by_username` RPC —
+    /// after the Plan 3 profiles lockdown, direct table reads only see
+    /// connected profiles. Friends-list filtering is client-side
+    /// (`FriendsViewModel`), not part of this seam.
     func resolveExact(_ username: String) async throws -> Profile?
+}
+
+protocol FriendServicing: Sendable {
+    /// Resolves the username server-side and returns the resulting friendship
+    /// row — `.pending` (request sent) or `.accepted` (reciprocal auto-accept).
+    func sendRequest(username: String) async throws -> Friendship
+    /// Accept (sets status + responded_at) or decline (deletes the row).
+    /// Addressee-only, enforced by the RPC.
+    func respond(requesterID: UUID, accept: Bool) async throws
+    /// Every edge involving `userID` — RLS (`fr_select_parties`) scopes rows to
+    /// the two parties; both parties' profiles are embedded.
+    func fetchEdges(userID: UUID) async throws -> [FriendEdge]
 }
 
 enum PostError {
@@ -39,6 +53,10 @@ enum PostError {
         let text = "\(error)"
         if text.contains("title is required") { return "An encouragement needs a title." }
         if text.contains("own storage folder") { return "That image couldn't be attached. Try picking it again." }
+        if text.contains("username not found") { return "We couldn't find that username." }
+        if text.contains("cannot send a friend request to yourself") { return "You can't add yourself." }
+        if text.contains("already friends") { return "You're already friends." }
+        if text.contains("no pending friend request") { return "That request is no longer available." }
         if text.contains("42501") || text.lowercased().contains("row-level security") {
             return "You don't have permission to do that."
         }

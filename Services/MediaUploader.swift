@@ -42,7 +42,10 @@ final class ProfileService: UsernameResolving {
         self.client = client
     }
 
-    /// Exact match, one row max. No `like`/`ilike` — Plan 2 ships no search surface.
+    /// Exact match via the `find_profile_by_username` RPC. After the Plan 3
+    /// profiles lockdown, a direct `.from("profiles")` query only sees
+    /// connected profiles — the RPC is the discovery path. Signature and
+    /// semantics unchanged for tag-picker consumers and fakes.
     func resolveExact(_ username: String) async throws -> Profile? {
         let cleaned = username
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,10 +53,9 @@ final class ProfileService: UsernameResolving {
             .lowercased()
         guard !cleaned.isEmpty else { return nil }
 
-        let rows: [Profile] = try await client.from("profiles")
-            .select()
-            .eq("username", value: cleaned)
-            .limit(1)
+        struct Params: Encodable { let p_username: String }
+        let rows: [Profile] = try await client
+            .rpc("find_profile_by_username", params: Params(p_username: cleaned))
             .execute()
             .value
         return rows.first
