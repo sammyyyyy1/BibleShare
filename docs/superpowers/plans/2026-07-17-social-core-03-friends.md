@@ -1299,7 +1299,7 @@ struct FriendsViewModelTests {
 
     // MARK: classification
 
-    @Test func classifiesIncomingOutgoingAccepted() {
+    @Test func classifiesIncomingOutgoingAccepted() async {
         let fake = FakeFriendService()
         fake.edges = [
             edge(requester: other, addressee: me, status: .pending),     // incoming
@@ -1308,6 +1308,7 @@ struct FriendsViewModelTests {
             edge(requester: me, addressee: third, status: .accepted),    // accepted
         ]
         let vm = FriendsViewModel(myID: me, service: fake)
+        await vm.load()
         #expect(vm.incoming.count == 1)
         #expect(vm.outgoing.count == 1)
         #expect(vm.accepted.count == 2)
@@ -1317,7 +1318,7 @@ struct FriendsViewModelTests {
 
     // MARK: friends-list filter
 
-    @Test func filterMatchesUsernameAndDisplayNameCaseInsensitively() {
+    @Test func filterMatchesUsernameAndDisplayNameCaseInsensitively() async {
         let fake = FakeFriendService()
         fake.edges = [
             edge(requester: other, addressee: me, status: .accepted,
@@ -1326,6 +1327,7 @@ struct FriendsViewModelTests {
                  requesterProfile: profile(third, "carol", "Carol C")),
         ]
         let vm = FriendsViewModel(myID: me, service: fake)
+        await vm.load()
 
         vm.searchText = "BOB"
         #expect(vm.filteredFriends.count == 1)

@@ -28,6 +28,8 @@
 - `App/RootView.swift` — auth gate: routes to AuthView / UsernameSetupView / HomeView
 - `Services/SupabaseService.swift` — shared Supabase client singleton
 - `Services/SocialServicing.swift` — protocol seams for social services (ProfileService etc.); fakes in `BibleShareTests/FakeSocialServices.swift`
+- `Services/FriendService.swift` — friend request/respond RPC wrappers + friends-list query (protocol `FriendServicing` in `SocialServicing.swift`)
+- `Views/FriendsView.swift` — Friends sheet (add by exact username, requests, friends list); presented from HomeView's `person` tab
 - `Views/Theme.swift` — Serene Light theme tokens (colors, spacing, typography)
 
 ## Gotchas / Conventions
@@ -38,6 +40,8 @@
 - **Protocol-seam pattern:** every service has a protocol (see `AuthProviding.swift`, `SocialServicing.swift`); ViewModels test against fakes. Shared fakes (`BibleShareTests/FakeSocialServices.swift`) are **additive-only** — multiple ViewModel test suites depend on the same file.
 - **SereneTextField** takes an `autocapitalization` parameter defaulting to `.never` — pass it explicitly for name/username fields that should capitalize.
 - **Defense-in-depth on write paths:** an RPC-level guard must never be the only enforcement if the underlying table's RLS could be reached another way (this bug class bit twice in Plan 2).
+- **`profiles` is locked down** (Plan 3): direct reads see only self + connected/tagged/commenter profiles. Cross-user discovery goes through the `find_profile_by_username` RPC (exact match) — never add a `like`/prefix profile query.
+- **`friendships` writes are RPC-only** (`send_friend_request`, `respond_to_friend_request`): the table has no INSERT/UPDATE/DELETE policy by design. Don't add one — extend the RPCs instead.
 - Build/test destination: `platform=iOS Simulator,name=iPhone 17`.
 
 ---
