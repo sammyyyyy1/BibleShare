@@ -135,6 +135,36 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     }
 }
 
+final class FakeFriendService: FriendServicing, @unchecked Sendable {
+    var edges: [FriendEdge] = []
+    var sendError: Error?
+    var respondError: Error?
+    /// Results returned by successive `sendRequest` calls; falls back to a
+    /// generic pending row when empty.
+    var sendResults: [Friendship] = []
+    private(set) var sentUsernames: [String] = []
+    private(set) var respondCalls: [(requesterID: UUID, accept: Bool)] = []
+    private(set) var fetchCount = 0
+
+    func sendRequest(username: String) async throws -> Friendship {
+        sentUsernames.append(username)
+        if let sendError { throw sendError }
+        if !sendResults.isEmpty { return sendResults.removeFirst() }
+        return Friendship(requesterID: UUID(), addresseeID: UUID(),
+                          status: .pending, createdAt: Date(), respondedAt: nil)
+    }
+
+    func respond(requesterID: UUID, accept: Bool) async throws {
+        respondCalls.append((requesterID, accept))
+        if let respondError { throw respondError }
+    }
+
+    func fetchEdges(userID: UUID) async throws -> [FriendEdge] {
+        fetchCount += 1
+        return edges
+    }
+}
+
 /// Builds a FeedItem without going through the network payload.
 enum FeedItemFactory {
     static func make(id: UUID = UUID(),
