@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AuthViewModel.self) private var auth
     @State private var showCompose = false
+    @State private var showFriends = false
     /// Bumped after a successful post to force TimelineView to reload.
     @State private var reloadToken = UUID()
 
@@ -37,7 +38,7 @@ struct HomeView: View {
                 tabIcon("house.fill", active: true) {}
                 tabIcon("magnifyingglass", active: false) {}
                 tabIcon("square.and.pencil", active: false) { showCompose = true }
-                tabIcon("person", active: false) {}
+                tabIcon("person", active: false) { showFriends = true }
             }
             .padding(.top, 10).padding(.bottom, 4)
             .overlay(Divider().overlay(Theme.hairline), alignment: .top)
@@ -48,6 +49,11 @@ struct HomeView: View {
                 ComposeEncouragementView(userID: userID) { _ in
                     reloadToken = UUID()   // refetch so the new post appears with its author + counts
                 }
+            }
+        }
+        .sheet(isPresented: $showFriends) {
+            if let userID = auth.profile?.id {
+                FriendsView(myID: userID)
             }
         }
     }

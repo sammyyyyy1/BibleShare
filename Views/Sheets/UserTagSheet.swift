@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Exact `@username` entry. Plan 2 ships no user search; Plan 3 adds
-/// search scoped to the viewer's accepted friends.
+/// Exact `@username` entry. Adding a tag stays exact-match only; the Plan 3
+/// friends list is where you can filter people you've already connected with.
 struct UserTagSheet: View {
     let onAdd: (String) async -> Void
 
