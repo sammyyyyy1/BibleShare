@@ -99,7 +99,7 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     private var suspensionContinuation: CheckedContinuation<Void, Never>?
     private var enteredFlightContinuation: CheckedContinuation<Void, Never>?
 
-    func fetchTimeline(authorID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
+    func fetchTimeline(before: Date?, limit: Int) async throws -> [FeedItem] {
         receivedCursors.append(before)
         receivedLimits.append(limit)
         if suspendNextFetch {
@@ -132,6 +132,36 @@ final class FakeFeedService: FeedServicing, @unchecked Sendable {
     func resumeSuspendedFetch() {
         suspensionContinuation?.resume()
         suspensionContinuation = nil
+    }
+}
+
+final class FakeFriendService: FriendServicing, @unchecked Sendable {
+    var edges: [FriendEdge] = []
+    var sendError: Error?
+    var respondError: Error?
+    /// Results returned by successive `sendRequest` calls; falls back to a
+    /// generic pending row when empty.
+    var sendResults: [Friendship] = []
+    private(set) var sentUsernames: [String] = []
+    private(set) var respondCalls: [(requesterID: UUID, accept: Bool)] = []
+    private(set) var fetchCount = 0
+
+    func sendRequest(username: String) async throws -> Friendship {
+        sentUsernames.append(username)
+        if let sendError { throw sendError }
+        if !sendResults.isEmpty { return sendResults.removeFirst() }
+        return Friendship(requesterID: UUID(), addresseeID: UUID(),
+                          status: .pending, createdAt: Date(), respondedAt: nil)
+    }
+
+    func respond(requesterID: UUID, accept: Bool) async throws {
+        respondCalls.append((requesterID, accept))
+        if let respondError { throw respondError }
+    }
+
+    func fetchEdges(userID: UUID) async throws -> [FriendEdge] {
+        fetchCount += 1
+        return edges
     }
 }
 

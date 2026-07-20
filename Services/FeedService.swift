@@ -22,13 +22,13 @@ final class FeedService: FeedServicing {
         self.client = client
     }
 
-    func fetchTimeline(authorID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
+    func fetchTimeline(before: Date?, limit: Int) async throws -> [FeedItem] {
+        // No author filter: RLS surfaces the viewer's own posts AND friends'
+        // shared_to_timeline posts (proven by the Task 5 SQL suite).
         var query = client.from("posts")
             .select(Self.feedSelect)
             .eq("kind", value: "encouragement")
             .eq("shared_to_timeline", value: true)
-            // Plan 3 drops this filter and RLS surfaces friends' posts too.
-            .eq("author_id", value: authorID.uuidString)
 
         if let before {
             // Pass the Date directly so supabase-swift's own PostgrestFilterValue
