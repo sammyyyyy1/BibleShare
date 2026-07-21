@@ -30,6 +30,8 @@
 - `Services/SocialServicing.swift` — protocol seams for social services (ProfileService etc.); fakes in `BibleShareTests/FakeSocialServices.swift`
 - `Services/FriendService.swift` — friend request/respond RPC wrappers + friends-list query (protocol `FriendServicing` in `SocialServicing.swift`)
 - `Views/FriendsView.swift` — Friends sheet (add by exact username, requests, friends list); presented from HomeView's `person` tab
+- `Services/PostService.swift` — `check_in` RPC wrapper (group check-ins fan out one post + ledger rows per group)
+- `ViewModels/CheckInViewModel.swift` + `Views/CheckInView.swift` — Check-in tab (pending `active_checkin_targets` + compose in check-in mode); hoisted into `RootTabView` for the badge
 - `Views/Theme.swift` — Serene Light theme tokens (colors, spacing, typography)
 
 ## Gotchas / Conventions
@@ -42,6 +44,7 @@
 - **Defense-in-depth on write paths:** an RPC-level guard must never be the only enforcement if the underlying table's RLS could be reached another way (this bug class bit twice in Plan 2).
 - **`profiles` is locked down** (Plan 3): direct reads see only self + connected/tagged/commenter profiles. Cross-user discovery goes through the `find_profile_by_username` RPC (exact match) — never add a `like`/prefix profile query.
 - **`friendships` writes are RPC-only** (`send_friend_request`, `respond_to_friend_request`): the table has no INSERT/UPDATE/DELETE policy by design. Don't add one — extend the RPCs instead.
+- **Check-in windows open via `pg_cron`** (`private.open_checkin_windows`, job `open-checkin-windows`, `*/15`). `opens_at` is always the true scheduled instant in the group's timezone; idempotency rides `unique(group_id, opens_at)`. Test the slot math with `private.due_slot_for(cadence, time, weekday, tz, p_now)` — never by waiting on the cron.
 - Build/test destination: `platform=iOS Simulator,name=iPhone 17`.
 
 ---
