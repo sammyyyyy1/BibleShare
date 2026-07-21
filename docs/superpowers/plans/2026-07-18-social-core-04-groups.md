@@ -43,6 +43,7 @@
 
 **Swift (create):**
 - `Services/GroupService.swift` — live `GroupServicing`.
+- `ViewModels/FeedLikeHandling.swift` — shared optimistic like-handling mixin (Home + group timelines).
 - `ViewModels/GroupListViewModel.swift`, `ViewModels/GroupTimelineViewModel.swift`, `ViewModels/CreateGroupViewModel.swift`.
 - `Views/RootTabView.swift`, `Views/GroupsView.swift`, `Views/GroupTimelineView.swift`, `Views/CreateGroupView.swift`, `Views/ProfileView.swift`.
 
@@ -51,6 +52,7 @@
 - `Models/ComposeParams.swift` — add `CreateGroupParams`; add `groupIDs` to `CreateEncouragementParams`.
 - `Services/SocialServicing.swift` — add `GroupServicing`; group cases in `PostError.message(for:)`.
 - `Services/FeedService.swift` — make `feedSelect` internal (drop `private`) for reuse.
+- `ViewModels/TimelineViewModel.swift` — conform to `FeedLikeHandling`; drop the now-shared like methods.
 - `ViewModels/ComposeViewModel.swift` — group multi-select state + destination invariant.
 - `Views/ComposeEncouragementView.swift` — group multi-select section + optional preselected group.
 - `Views/HomeView.swift` — strip the bottom tab bar + sign-out menu (they move to `RootTabView`/`ProfileView`); keep header + timeline + compose.
@@ -1708,17 +1710,22 @@ git commit -m "feat(groups): GroupListViewModel + FakeGroupService"
 
 ---
 
-## Task 9: `GroupTimelineViewModel`
+## Task 9: Shared like-handling mixin + `GroupTimelineViewModel`
 
-The per-group timeline: paged posts (reusing `FeedServicing.likedPostIDs` + `PostServicing.setLike` for likes, exactly like `TimelineViewModel`), the member list, an `isCreator` flag, and the creator's invite action.
+The per-group timeline: paged posts, the member list, an `isCreator` flag, and the creator's invite action. The optimistic like-handling is **shared** with `TimelineViewModel` via a new `FeedLikeHandling` mixin (a decision made during pre-flight review — the two ViewModels must not duplicate the ~35-line like logic). `TimelineViewModel` is refactored to conform to the mixin **without changing its public API**, so `TimelineView` and `TimelineViewModelTests` are untouched.
 
 **Files:**
+- Create: `ViewModels/FeedLikeHandling.swift`
+- Modify: `ViewModels/TimelineViewModel.swift` (conform to the mixin; remove the now-shared bodies)
 - Create: `ViewModels/GroupTimelineViewModel.swift`
 - Test: `BibleShareTests/GroupTimelineViewModelTests.swift`
 
 **Interfaces:**
 - Consumes: `GroupServicing`, `FeedServicing`, `PostServicing`, `FeedItem`, `GroupMemberRow`; `FeedItemFactory` (test).
-- Produces (Swift): `@MainActor @Observable final class GroupTimelineViewModel` — `init(groupID:myID:groupService:feed:posts:)`, `items`, `members`, `isLoading`, `isLoadingMore`, `hasMore`, `errorMessage`, `inviteError`, `inviteStatus`, `isInviting`, `isCreator: Bool`, `load()`, `loadMore()`, `toggleLike(itemID:)`, `invite(username:)`.
+- Produces (Swift):
+  - `@MainActor protocol FeedLikeHandling: AnyObject` — requirements `var items: [FeedItem] { get set }`, `var errorMessage: String? { get set }`, `var likeFeed: FeedServicing { get }`, `var likePosts: PostServicing { get }`; extension methods `markLiked(_:userID:) async throws -> [FeedItem]` and `toggleLike(itemID:userID:) async`.
+  - `@MainActor @Observable final class GroupTimelineViewModel: FeedLikeHandling` — `init(groupID:myID:groupService:feed:posts:)`, `items`, `members`, `isLoading`, `isLoadingMore`, `hasMore`, `errorMessage`, `inviteError`, `inviteStatus`, `isInviting`, `isCreator: Bool`, `load()`, `loadMore()`, `toggleLike(itemID:)`, `invite(username:)`.
+  - `TimelineViewModel` keeps its existing public API — `load(userID:)`, `loadMore(userID:)`, `toggleLike(itemID:userID:)` (now the mixin default), `delete(itemID:)`, `insert(_:)`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1805,20 +1812,96 @@ xcodebuild test -scheme BibleShare -destination 'platform=iOS Simulator,name=iPh
 
 Expected: FAIL — `GroupTimelineViewModel` not in scope.
 
-- [ ] **Step 3: Create `ViewModels/GroupTimelineViewModel.swift`**
+- [ ] **Step 3: Create the shared mixin `ViewModels/FeedLikeHandling.swift`**
+
+```swift
+import Foundation
+
+/// Shared optimistic like-handling for feed-style ViewModels (the Home timeline
+/// and group timelines). Both hold a `[FeedItem]` list and toggle likes
+/// identically; this mixin is the single source of that logic. `userID` is
+/// passed per call so conformers needn't store it (TimelineViewModel receives it
+/// per call; GroupTimelineViewModel passes its stored `myID`).
+@MainActor
+protocol FeedLikeHandling: AnyObject {
+    var items: [FeedItem] { get set }
+    var errorMessage: String? { get set }
+    var likeFeed: FeedServicing { get }
+    var likePosts: PostServicing { get }
+}
+
+extension FeedLikeHandling {
+    /// `likes(count)` gives the tally but not membership, so ask which of these
+    /// posts the viewer has liked and stamp `isLiked`.
+    func markLiked(_ page: [FeedItem], userID: UUID) async throws -> [FeedItem] {
+        guard !page.isEmpty else { return page }
+        let liked = try await likeFeed.likedPostIDs(userID: userID, among: page.map(\.id))
+        return page.map { item in
+            var copy = item
+            copy.isLiked = liked.contains(item.id)
+            return copy
+        }
+    }
+
+    /// Optimistically flips the like on `itemID`, calls the service, and reverts
+    /// on failure (the row index may shift while awaiting).
+    func toggleLike(itemID: UUID, userID: UUID) async {
+        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
+        let wasLiked = items[index].isLiked
+        let target = !wasLiked
+        items[index].isLiked = target
+        items[index].likeCount += target ? 1 : -1
+        do {
+            try await likePosts.setLike(postID: itemID, userID: userID, liked: target)
+        } catch {
+            if let current = items.firstIndex(where: { $0.id == itemID }) {
+                items[current].isLiked = wasLiked
+                items[current].likeCount += target ? -1 : 1
+            }
+            errorMessage = PostError.message(for: error)
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Refactor `ViewModels/TimelineViewModel.swift` onto the mixin**
+
+Three edits, all internal — the public API (and therefore `TimelineView` and `TimelineViewModelTests`) is unchanged:
+
+1. Add the conformance and widen `items` so the mixin can mutate it. Change the class declaration and the `items` line:
+
+```swift
+final class TimelineViewModel: FeedLikeHandling {
+```
+```swift
+    // Settable (not private(set)) so the FeedLikeHandling mixin can mutate it.
+    var items: [FeedItem] = []
+```
+
+2. Expose the deps to the mixin — add these computed properties (e.g. right after the `posts`/`feed` stored properties):
+
+```swift
+    var likeFeed: FeedServicing { feed }
+    var likePosts: PostServicing { posts }
+```
+
+3. Delete the now-shared `private func markLiked(_:userID:)`... wait — the existing private `markLiked(_ page:userID:)` and `func toggleLike(itemID:userID:)` are replaced by the mixin. **Delete** both method bodies from `TimelineViewModel`. The `load`/`loadMore` call sites already read `try await markLiked(page, userID: userID)`, which now resolves to the mixin method (identical signature); `TimelineView`'s `vm.toggleLike(itemID:userID:)` now resolves to the mixin default (identical signature). No call-site edits needed.
+
+- [ ] **Step 5: Create `ViewModels/GroupTimelineViewModel.swift`**
 
 ```swift
 import Foundation
 
 @MainActor
 @Observable
-final class GroupTimelineViewModel {
+final class GroupTimelineViewModel: FeedLikeHandling {
     static let pageSize = 20
 
     let groupID: UUID
     let myID: UUID
 
-    private(set) var items: [FeedItem] = []
+    // Settable (not private(set)) so the FeedLikeHandling mixin can mutate it.
+    var items: [FeedItem] = []
     private(set) var members: [GroupMemberRow] = []
     private(set) var isLoading = false
     private(set) var isLoadingMore = false
@@ -1844,6 +1927,9 @@ final class GroupTimelineViewModel {
         self.posts = posts
     }
 
+    var likeFeed: FeedServicing { feed }
+    var likePosts: PostServicing { posts }
+
     var isCreator: Bool {
         members.contains { $0.userID == myID && $0.role == "creator" }
     }
@@ -1857,7 +1943,7 @@ final class GroupTimelineViewModel {
             async let membersTask = groupService.fetchMembers(groupID: groupID)
             let page = try await groupService.fetchGroupTimeline(groupID: groupID, before: nil, limit: Self.pageSize)
             members = try await membersTask
-            items = try await markLiked(page)
+            items = try await markLiked(page, userID: myID)
             hasMore = page.count == Self.pageSize
         } catch {
             errorMessage = PostError.message(for: error)
@@ -1870,38 +1956,16 @@ final class GroupTimelineViewModel {
         defer { isLoadingMore = false }
         do {
             let page = try await groupService.fetchGroupTimeline(groupID: groupID, before: cursor, limit: Self.pageSize)
-            items += try await markLiked(page)
+            items += try await markLiked(page, userID: myID)
             hasMore = page.count == Self.pageSize
         } catch {
             errorMessage = PostError.message(for: error)
         }
     }
 
-    private func markLiked(_ page: [FeedItem]) async throws -> [FeedItem] {
-        guard !page.isEmpty else { return page }
-        let liked = try await feed.likedPostIDs(userID: myID, among: page.map(\.id))
-        return page.map { item in
-            var copy = item
-            copy.isLiked = liked.contains(item.id)
-            return copy
-        }
-    }
-
+    /// Group timelines always like as the current member; wraps the mixin toggle.
     func toggleLike(itemID: UUID) async {
-        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
-        let wasLiked = items[index].isLiked
-        let target = !wasLiked
-        items[index].isLiked = target
-        items[index].likeCount += target ? 1 : -1
-        do {
-            try await posts.setLike(postID: itemID, userID: myID, liked: target)
-        } catch {
-            if let current = items.firstIndex(where: { $0.id == itemID }) {
-                items[current].isLiked = wasLiked
-                items[current].likeCount += target ? -1 : 1
-            }
-            errorMessage = PostError.message(for: error)
-        }
+        await toggleLike(itemID: itemID, userID: myID)
     }
 
     func invite(username: String) async {
@@ -1923,15 +1987,26 @@ final class GroupTimelineViewModel {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests to verify they pass**
 
-Same command as Step 2. Expected: PASS (5 tests).
-
-- [ ] **Step 5: Commit**
+Run the new group tests **and** the existing timeline tests (the refactor must not regress them):
 
 ```bash
-git add ViewModels/GroupTimelineViewModel.swift BibleShareTests/GroupTimelineViewModelTests.swift
-git commit -m "feat(groups): GroupTimelineViewModel (feed + members + invite)"
+make generate
+xcodebuild test -scheme BibleShare -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -derivedDataPath build/DerivedData -clonedSourcePackagesDirPath build/SourcePackages \
+  -only-testing:BibleShareTests/GroupTimelineViewModelTests \
+  -only-testing:BibleShareTests/TimelineViewModelTests 2>&1 | tail -20
+```
+
+Expected: PASS — 5 new `GroupTimelineViewModelTests` plus every pre-existing `TimelineViewModelTests` case (unchanged public API).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add ViewModels/FeedLikeHandling.swift ViewModels/TimelineViewModel.swift \
+        ViewModels/GroupTimelineViewModel.swift BibleShareTests/GroupTimelineViewModelTests.swift
+git commit -m "feat(groups): GroupTimelineViewModel + shared FeedLikeHandling mixin"
 ```
 
 ---
