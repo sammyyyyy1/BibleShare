@@ -172,7 +172,7 @@ struct GroupCheckin: Codable, Hashable, Sendable {
     let groupID: UUID
     let userID: UUID
     let windowID: UUID
-    let postID: UUID
+    let postID: UUID?
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {

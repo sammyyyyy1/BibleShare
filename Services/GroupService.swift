@@ -84,4 +84,8 @@ final class GroupService: GroupServicing {
             .rpc("respond_to_invite", params: Params(p_invite_id: inviteID, p_accept: accept))
             .execute()
     }
+
+    func fetchActiveCheckinTargets() async throws -> [CheckinTarget] {
+        try await client.rpc("active_checkin_targets").execute().value
+    }
 }

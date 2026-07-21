@@ -7,7 +7,7 @@ final class FeedService: FeedServicing {
     /// The embedded select for a timeline row. RLS (posts_select_visible) is the
     /// only visibility gate — this query adds no auth logic of its own.
     static let feedSelect = """
-    id,author_id,title,body,created_at,\
+    id,kind,author_id,title,body,created_at,\
     author:profiles!posts_author_id_profiles_fkey(*),\
     post_verses(*),\
     post_media(*),\

@@ -264,4 +264,74 @@ struct ComposeViewModelTests {
         vm.preselect(groupID: g)
         #expect(vm.selectedGroupIDs.contains(g))
     }
+
+    @MainActor
+    @Test func checkInModeRequiresATargetButNoTitle() {
+        let vm = ComposeViewModel(mode: .checkIn,
+                                  posts: FakePostService(), uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        #expect(vm.canSubmit == false)          // no target selected
+        vm.title = "A title changes nothing"
+        #expect(vm.canSubmit == false)          // still needs a target
+        vm.title = ""
+        vm.selectedGroupIDs = [UUID()]
+        #expect(vm.canSubmit == true)           // title is optional in check-in mode
+    }
+
+    @MainActor
+    @Test func checkInModeSubmitRoutesToCheckInRPC() async throws {
+        let fakePosts = FakePostService()
+        let vm = ComposeViewModel(mode: .checkIn,
+                                  posts: fakePosts, uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        let g = UUID()
+        vm.selectedGroupIDs = [g]
+
+        let id = await vm.submit(userID: UUID())
+
+        #expect(id == fakePosts.newCheckInPostID)
+        #expect(fakePosts.createdParams.isEmpty, "check-in mode must not call createEncouragement")
+        let params = try #require(fakePosts.checkInParams.first)
+        #expect(params.groupIDs == [g])
+        #expect(params.title == nil, "a blank title stays nil for check-ins")
+    }
+
+    @MainActor
+    @Test func checkInModeSubmitSendsTrimmedTitleWhenProvided() async throws {
+        let fakePosts = FakePostService()
+        let vm = ComposeViewModel(mode: .checkIn,
+                                  posts: fakePosts, uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        vm.selectedGroupIDs = [UUID()]
+        vm.title = "  Doing well  "
+
+        _ = await vm.submit(userID: UUID())
+
+        #expect(fakePosts.checkInParams.first?.title == "Doing well")
+    }
+
+    @MainActor
+    @Test func loadCheckinTargetsPopulatesOnSuccessAndIgnoresFailure() async {
+        let fakeGroups = FakeGroupService()
+        fakeGroups.activeTargets = [CheckinTarget(groupID: UUID(), name: "Daily Crew", windowID: UUID())]
+        let vm = ComposeViewModel(mode: .checkIn,
+                                  posts: FakePostService(), uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: fakeGroups)
+        await vm.loadCheckinTargets()
+        #expect(vm.checkinTargets.count == 1)
+
+        let failingGroups = FakeGroupService()
+        failingGroups.targetsError = PostErrorStub.boom
+        let vm2 = ComposeViewModel(mode: .checkIn,
+                                   posts: FakePostService(), uploader: FakeMediaUploader(),
+                                   resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                   groups: failingGroups)
+        await vm2.loadCheckinTargets()
+        #expect(vm2.checkinTargets.isEmpty, "a failed targets load leaves the list empty, no error surfaced")
+        #expect(vm2.errorMessage == nil)
+    }
 }

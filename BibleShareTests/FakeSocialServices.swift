@@ -13,6 +13,9 @@ final class FakePostService: PostServicing, @unchecked Sendable {
     private(set) var addedComments: [(postID: UUID, content: String)] = []
     var comments: [CommentItem] = []
     let newPostID = UUID()
+    var checkInError: Error?
+    private(set) var checkInParams: [CheckInParams] = []
+    let newCheckInPostID = UUID()
 
     /// Fires mid-flight inside `setLike`, before success/failure is decided —
     /// lets tests observe optimistic UI state while the "server call" is in flight.
@@ -36,6 +39,11 @@ final class FakePostService: PostServicing, @unchecked Sendable {
     func fetchComments(postID: UUID) async throws -> [CommentItem] { comments }
     func addComment(postID: UUID, userID: UUID, content: String) async throws {
         addedComments.append((postID, content))
+    }
+    func checkIn(_ params: CheckInParams) async throws -> UUID {
+        checkInParams.append(params)
+        if let checkInError { throw checkInError }
+        return newCheckInPostID
     }
 }
 
@@ -183,6 +191,9 @@ final class FakeGroupService: GroupServicing, @unchecked Sendable {
     private(set) var receivedCursors: [Date?] = []
     private(set) var myGroupsFetchCount = 0
     private(set) var incomingInvitesFetchCount = 0
+    var activeTargets: [CheckinTarget] = []
+    var targetsError: Error?
+    private(set) var targetsFetchCount = 0
 
     func createGroup(_ params: CreateGroupParams) async throws -> FellowshipGroup {
         createdParams.append(params)
@@ -222,6 +233,11 @@ final class FakeGroupService: GroupServicing, @unchecked Sendable {
     func respondToInvite(inviteID: UUID, accept: Bool) async throws {
         respondCalls.append((inviteID, accept))
         if let respondError { throw respondError }
+    }
+    func fetchActiveCheckinTargets() async throws -> [CheckinTarget] {
+        targetsFetchCount += 1
+        if let targetsError { throw targetsError }
+        return activeTargets
     }
 }
 

@@ -5,6 +5,9 @@ import Foundation
 
 protocol PostServicing: Sendable {
     func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID
+    /// One check-in post fanned out to the given groups (each must have an
+    /// open, unanswered window). Returns the new post id.
+    func checkIn(_ params: CheckInParams) async throws -> UUID
     func deletePost(id: UUID, imagePaths: [String]) async throws
     func setLike(postID: UUID, userID: UUID, liked: Bool) async throws
     func fetchComments(postID: UUID) async throws -> [CommentItem]
@@ -60,6 +63,8 @@ protocol GroupServicing: Sendable {
     func fetchIncomingInvites(userID: UUID) async throws -> [GroupInviteRow]
     /// Accept (adds membership) or decline (stamps status). Invitee-only.
     func respondToInvite(inviteID: UUID, accept: Bool) async throws
+    /// The caller's groups with an open, unanswered check-in window.
+    func fetchActiveCheckinTargets() async throws -> [CheckinTarget]
 }
 
 enum PostError {
@@ -83,6 +88,13 @@ enum PostError {
         if text.contains("at least one destination") { return "Choose your timeline or at least one group." }
         if text.contains("group name must be") { return "A group name must be 1–60 characters." }
         if text.contains("no pending invite") { return "That invite is no longer available." }
+        if text.contains("no active check-in window") { return "That check-in window has closed." }
+        if text.contains("already checked in") { return "You've already checked in there." }
+        if text.contains("a check-in needs at least one group") { return "Choose at least one group." }
+        if text.contains("weekday must be between 0 and 6") { return "Pick a day of the week." }
+        if text.contains("a check-in schedule needs a time") { return "Pick a time for the check-in." }
+        if text.contains("a weekly schedule needs a weekday") { return "Pick a weekday for the check-in." }
+        if text.contains("unknown timezone") { return "That time zone isn't recognized." }
         if text.contains("42501") || text.lowercased().contains("row-level security") {
             return "You don't have permission to do that."
         }
