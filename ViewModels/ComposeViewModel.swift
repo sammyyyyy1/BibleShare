@@ -8,10 +8,19 @@ struct ComposeImage: Identifiable, Hashable, Sendable {
     let jpeg: Data
 }
 
+/// Encouragement (title required, timeline-or-groups destination) vs check-in
+/// (title optional, groups-with-open-window targets only, never the timeline).
+enum ComposeMode: Sendable {
+    case encouragement
+    case checkIn
+}
+
 @MainActor
 @Observable
 final class ComposeViewModel {
     static let maxImages = 4
+
+    let mode: ComposeMode
 
     var title = ""
     var body = ""
@@ -25,17 +34,22 @@ final class ComposeViewModel {
     var myGroups: [GroupListItem] = []
     var selectedGroupIDs: Set<UUID> = []
 
+    /// Check-in mode: groups with an open, unanswered window for the caller.
+    var checkinTargets: [CheckinTarget] = []
+
     private let posts: PostServicing
     private let uploader: MediaUploading
     private let resolver: UsernameResolving
     private let bible: BibleFetching
     private let groups: GroupServicing
 
-    init(posts: PostServicing = PostService.shared,
+    init(mode: ComposeMode = .encouragement,
+         posts: PostServicing = PostService.shared,
          uploader: MediaUploading = MediaUploader.shared,
          resolver: UsernameResolving = ProfileService.shared,
          bible: BibleFetching = BibleService.shared,
          groups: GroupServicing = GroupService.shared) {
+        self.mode = mode
         self.posts = posts
         self.uploader = uploader
         self.resolver = resolver
@@ -51,7 +65,13 @@ final class ComposeViewModel {
     var hasDestination: Bool { sharedToTimeline || !selectedGroupIDs.isEmpty }
 
     var canSubmit: Bool {
-        !trimmedTitle.isEmpty && hasDestination && !isSubmitting && pendingImages.count <= Self.maxImages
+        guard !isSubmitting, pendingImages.count <= Self.maxImages else { return false }
+        switch mode {
+        case .encouragement:
+            return !trimmedTitle.isEmpty && hasDestination
+        case .checkIn:
+            return !selectedGroupIDs.isEmpty
+        }
     }
     var canAddImage: Bool { pendingImages.count < Self.maxImages }
 
@@ -115,6 +135,13 @@ final class ComposeViewModel {
         selectedGroupIDs.insert(groupID)
     }
 
+    /// Check-in mode: loads groups with an open, unanswered window. Non-fatal,
+    /// mirroring loadGroups — the Check-in tab shows its own empty state.
+    func loadCheckinTargets() async {
+        do { checkinTargets = try await groups.fetchActiveCheckinTargets() }
+        catch { /* leave checkinTargets empty */ }
+    }
+
     // MARK: Submit
 
     /// Uploads images, then writes the post. On failure, sweeps the objects it
@@ -141,19 +168,33 @@ final class ComposeViewModel {
                              position: uploadedPaths.count + index)
             }
 
-            let params = CreateEncouragementParams(
-                title: trimmedTitle,
-                body: {
-                    let t = body.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return t.isEmpty ? nil : t
-                }(),
-                sharedToTimeline: sharedToTimeline,
-                groupIDs: Array(selectedGroupIDs),
-                verses: verses,
-                media: media,
-                tagUserIDs: taggedUsers.map(\.id)
-            )
-            return try await posts.createEncouragement(params)
+            switch mode {
+            case .encouragement:
+                let params = CreateEncouragementParams(
+                    title: trimmedTitle,
+                    body: {
+                        let t = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return t.isEmpty ? nil : t
+                    }(),
+                    sharedToTimeline: sharedToTimeline,
+                    groupIDs: Array(selectedGroupIDs),
+                    verses: verses,
+                    media: media,
+                    tagUserIDs: taggedUsers.map(\.id)
+                )
+                return try await posts.createEncouragement(params)
+            case .checkIn:
+                let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                let params = CheckInParams(
+                    groupIDs: Array(selectedGroupIDs),
+                    title: trimmedTitle.isEmpty ? nil : trimmedTitle,
+                    body: trimmedBody.isEmpty ? nil : trimmedBody,
+                    verses: verses,
+                    media: media,
+                    tagUserIDs: taggedUsers.map(\.id)
+                )
+                return try await posts.checkIn(params)
+            }
         } catch {
             // Compensating delete: without this, every failed submit strands objects.
             // If the sweep itself also fails, log it (there is no cleanup job
