@@ -181,6 +181,8 @@ final class FakeGroupService: GroupServicing, @unchecked Sendable {
     private(set) var respondCalls: [(inviteID: UUID, accept: Bool)] = []
     private(set) var timelineFetchCount = 0
     private(set) var receivedCursors: [Date?] = []
+    private(set) var myGroupsFetchCount = 0
+    private(set) var incomingInvitesFetchCount = 0
 
     func createGroup(_ params: CreateGroupParams) async throws -> FellowshipGroup {
         createdParams.append(params)
@@ -191,6 +193,7 @@ final class FakeGroupService: GroupServicing, @unchecked Sendable {
             timezone: params.timezone, createdAt: Date())
     }
     func fetchMyGroups(userID: UUID) async throws -> [GroupListItem] {
+        myGroupsFetchCount += 1
         if let fetchError { throw fetchError }
         return myGroups
     }
@@ -212,6 +215,7 @@ final class FakeGroupService: GroupServicing, @unchecked Sendable {
             status: .pending, createdAt: Date(), respondedAt: nil)
     }
     func fetchIncomingInvites(userID: UUID) async throws -> [GroupInviteRow] {
+        incomingInvitesFetchCount += 1
         if let fetchError { throw fetchError }
         return invites
     }

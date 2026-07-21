@@ -40,6 +40,8 @@ struct GroupListViewModelTests {
         await vm.respond(inviteID: inviteID, accept: true)
         #expect(fake.respondCalls.first?.inviteID == inviteID)
         #expect(fake.respondCalls.first?.accept == true)
+        #expect(fake.myGroupsFetchCount >= 1)
+        #expect(fake.incomingInvitesFetchCount >= 1)
     }
 }
 
