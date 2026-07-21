@@ -94,6 +94,7 @@ enum PostError {
         if text.contains("weekday must be between 0 and 6") { return "Pick a day of the week." }
         if text.contains("a check-in schedule needs a time") { return "Pick a time for the check-in." }
         if text.contains("a weekly schedule needs a weekday") { return "Pick a weekday for the check-in." }
+        if text.contains("unknown timezone") { return "That time zone isn't recognized." }
         if text.contains("42501") || text.lowercased().contains("row-level security") {
             return "You don't have permission to do that."
         }
