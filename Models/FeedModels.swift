@@ -26,6 +26,7 @@ struct FeedItem: Decodable, Identifiable, Hashable, Sendable {
     let authorID: UUID
     let title: String?
     let body: String?
+    let kind: PostKind
     let createdAt: Date
     let author: Profile?
     var verses: [PostVerse]
@@ -41,7 +42,7 @@ struct FeedItem: Decodable, Identifiable, Hashable, Sendable {
     var links: [PostMedia] { media.filter { $0.mediaType == .link } }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, body, author, likes, comments
+        case id, kind, title, body, author, likes, comments
         case authorID = "author_id"
         case createdAt = "created_at"
         case verses = "post_verses"
@@ -55,6 +56,7 @@ struct FeedItem: Decodable, Identifiable, Hashable, Sendable {
         authorID = try c.decode(UUID.self, forKey: .authorID)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         body = try c.decodeIfPresent(String.self, forKey: .body)
+        kind = (try c.decodeIfPresent(PostKind.self, forKey: .kind)) ?? .encouragement
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         author = try c.decodeIfPresent(Profile.self, forKey: .author)
         verses = (try c.decodeIfPresent([PostVerse].self, forKey: .verses) ?? [])

@@ -5,15 +5,27 @@ struct ComposeEncouragementView: View {
     let userID: UUID
     /// When set, the group is pre-selected as a destination (group "Post here").
     var preselectedGroupID: UUID? = nil
+    /// Encouragement (default) or check-in. Mode picks the title requirement,
+    /// the destination source, and the submit RPC.
+    let mode: ComposeMode
     /// Called with the new post's id after a successful write.
     let onPosted: (UUID) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var vm = ComposeViewModel()
+    @State private var vm: ComposeViewModel
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showVersePicker = false
     @State private var showTagSheet = false
     @State private var linkURL = ""
+
+    init(userID: UUID, preselectedGroupID: UUID? = nil,
+         mode: ComposeMode = .encouragement, onPosted: @escaping (UUID) -> Void) {
+        self.userID = userID
+        self.preselectedGroupID = preselectedGroupID
+        self.mode = mode
+        self.onPosted = onPosted
+        _vm = State(initialValue: ComposeViewModel(mode: mode))
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,8 +41,8 @@ struct ComposeEncouragementView: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.corner))
                     }
 
-                    SereneTextField(title: "Title (required)", text: $vm.title,
-                                     autocapitalization: .sentences)
+                    SereneTextField(title: mode == .checkIn ? "Title (optional)" : "Title (required)",
+                                    text: $vm.title, autocapitalization: .sentences)
 
                     TextEditor(text: $vm.body)
                         .frame(minHeight: 110)
@@ -41,7 +53,7 @@ struct ComposeEncouragementView: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.corner))
                         .overlay(alignment: .topLeading) {
                             if vm.body.isEmpty {
-                                Text("Share an encouragement…")
+                                Text(mode == .checkIn ? "Share how you're doing…" : "Share an encouragement…")
                                     .font(.body).foregroundStyle(Theme.muted)
                                     .padding(.horizontal, 13).padding(.vertical, 16)
                                     .allowsHitTesting(false)
@@ -132,7 +144,35 @@ struct ComposeEncouragementView: View {
                         }
                     }
 
-                    if !vm.myGroups.isEmpty {
+                    if mode == .checkIn {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Check in to").font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            if vm.checkinTargets.isEmpty {
+                                Text("No open check-in windows right now.")
+                                    .font(.caption).foregroundStyle(Theme.muted)
+                            }
+                            ForEach(vm.checkinTargets) { target in
+                                Button {
+                                    if vm.selectedGroupIDs.contains(target.groupID) {
+                                        vm.selectedGroupIDs.remove(target.groupID)
+                                    } else {
+                                        vm.selectedGroupIDs.insert(target.groupID)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: vm.selectedGroupIDs.contains(target.groupID)
+                                              ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(vm.selectedGroupIDs.contains(target.groupID)
+                                                             ? Theme.indigo : Theme.muted)
+                                        Text(target.name).foregroundStyle(Theme.ink)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } else if !vm.myGroups.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Post to groups").font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Theme.ink)
@@ -158,11 +198,13 @@ struct ComposeEncouragementView: View {
                         }
                     }
 
-                    Toggle("Show on my timeline", isOn: $vm.sharedToTimeline)
-                        .font(.subheadline)
-                        .tint(Theme.indigo)
+                    if mode == .encouragement {
+                        Toggle("Show on my timeline", isOn: $vm.sharedToTimeline)
+                            .font(.subheadline)
+                            .tint(Theme.indigo)
+                    }
 
-                    PrimaryButton(title: "Post", isLoading: vm.isSubmitting) {
+                    PrimaryButton(title: mode == .checkIn ? "Check in" : "Post", isLoading: vm.isSubmitting) {
                         Task {
                             if let id = await vm.submit(userID: userID) {
                                 onPosted(id)
@@ -177,7 +219,7 @@ struct ComposeEncouragementView: View {
                 .padding(20)
             }
             .background(Theme.cream.ignoresSafeArea())
-            .navigationTitle("New encouragement")
+            .navigationTitle(mode == .checkIn ? "New check-in" : "New encouragement")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -194,7 +236,11 @@ struct ComposeEncouragementView: View {
                 Task { await loadPhotos(items) }
             }
             .task {
-                await vm.loadGroups(userID: userID)
+                if mode == .checkIn {
+                    await vm.loadCheckinTargets()
+                } else {
+                    await vm.loadGroups(userID: userID)
+                }
                 if let preselectedGroupID { vm.preselect(groupID: preselectedGroupID) }
             }
         }

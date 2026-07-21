@@ -54,6 +54,14 @@ struct PostCell: View {
                 .foregroundStyle(Theme.ink)
             Text(item.createdAt, format: .relative(presentation: .named))
                 .font(.caption).foregroundStyle(Theme.muted)
+            if item.kind == .checkIn {
+                Text("Checked in")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.indigo)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Theme.indigo.opacity(0.12))
+                    .clipShape(Capsule())
+            }
             Spacer()
             if isMine {
                 Menu {
