@@ -20,8 +20,9 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_local timestamp;
-  v_slot  date;
+  v_local  timestamp;
+  v_slot   date;
+  v_result timestamptz;
 begin
   if p_cadence = 'none' or p_time is null then
     return null;
@@ -48,7 +49,23 @@ begin
   -- Local wall-clock back to UTC. On spring-forward a nonexistent local time is
   -- resolved by the zone rules; the unique(group_id, opens_at) guard absorbs
   -- fall-back duplicates (accepted per spec §10).
-  return (v_slot + p_time) at time zone p_timezone;
+  v_result := (v_slot + p_time) at time zone p_timezone;
+
+  -- DST clamp: resolving a nonexistent local time (spring-forward) can land the
+  -- slot AFTER p_now, which would break this function's contract (the most
+  -- recent scheduled instant <= p_now) and publish a future-dated window. Step
+  -- back one cadence period so the invariant always holds. A no-op outside the
+  -- transition hour, since the date arithmetic above already rolled back when
+  -- the slot had not yet occurred in local time.
+  if v_result > p_now then
+    if p_cadence = 'daily' then
+      v_result := ((v_slot - 1) + p_time) at time zone p_timezone;
+    else
+      v_result := ((v_slot - 7) + p_time) at time zone p_timezone;
+    end if;
+  end if;
+
+  return v_result;
 end;
 $$;
 
