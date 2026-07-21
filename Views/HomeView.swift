@@ -3,7 +3,6 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AuthViewModel.self) private var auth
     @State private var showCompose = false
-    @State private var showFriends = false
     /// Bumped after a successful post to force TimelineView to reload.
     @State private var reloadToken = UUID()
 
@@ -14,12 +13,10 @@ struct HomeView: View {
                     .font(.system(.title3, design: .serif).weight(.bold))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Menu {
-                    Button("Sign out", role: .destructive) { Task { await auth.signOut() } }
-                } label: {
-                    Circle().fill(Theme.indigo).frame(width: 30, height: 30)
-                        .overlay(Text(String(auth.currentUsername?.prefix(1) ?? "?").uppercased())
-                            .font(.caption).foregroundStyle(.white))
+                Button { showCompose = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Theme.indigo)
                 }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
@@ -33,15 +30,6 @@ struct HomeView: View {
                 ProgressView().tint(Theme.indigo)
                 Spacer()
             }
-
-            HStack {
-                tabIcon("house.fill", active: true) {}
-                tabIcon("magnifyingglass", active: false) {}
-                tabIcon("square.and.pencil", active: false) { showCompose = true }
-                tabIcon("person", active: false) { showFriends = true }
-            }
-            .padding(.top, 10).padding(.bottom, 4)
-            .overlay(Divider().overlay(Theme.hairline), alignment: .top)
         }
         .background(Theme.cream.ignoresSafeArea())
         .sheet(isPresented: $showCompose) {
@@ -51,22 +39,6 @@ struct HomeView: View {
                 }
             }
         }
-        .sheet(isPresented: $showFriends) {
-            if let userID = auth.profile?.id {
-                FriendsView(myID: userID)
-            }
-        }
-    }
-
-    private func tabIcon(_ name: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name)
-                .font(.system(size: 20))
-                .foregroundStyle(active ? Theme.indigo : Theme.muted.opacity(0.5))
-                .frame(maxWidth: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 }
 

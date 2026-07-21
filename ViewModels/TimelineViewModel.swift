@@ -2,10 +2,11 @@ import Foundation
 
 @MainActor
 @Observable
-final class TimelineViewModel {
+final class TimelineViewModel: FeedLikeHandling {
     static let pageSize = 20
 
-    private(set) var items: [FeedItem] = []
+    // Settable (not private(set)) so the FeedLikeHandling mixin can mutate it.
+    var items: [FeedItem] = []
     private(set) var isLoading = false
     private(set) var isLoadingMore = false
     private(set) var hasMore = true
@@ -13,6 +14,9 @@ final class TimelineViewModel {
 
     private let feed: FeedServicing
     private let posts: PostServicing
+
+    var likeFeed: FeedServicing { feed }
+    var likePosts: PostServicing { posts }
 
     init(feed: FeedServicing = FeedService.shared,
          posts: PostServicing = PostService.shared) {
@@ -43,39 +47,6 @@ final class TimelineViewModel {
             items += try await markLiked(page, userID: userID)
             hasMore = page.count == Self.pageSize
         } catch {
-            errorMessage = PostError.message(for: error)
-        }
-    }
-
-    /// `likes(count)` gives the tally but not membership, so ask which of these
-    /// posts the viewer has liked.
-    private func markLiked(_ page: [FeedItem], userID: UUID) async throws -> [FeedItem] {
-        guard !page.isEmpty else { return page }
-        let liked = try await feed.likedPostIDs(userID: userID, among: page.map(\.id))
-        return page.map { item in
-            var copy = item
-            copy.isLiked = liked.contains(item.id)
-            return copy
-        }
-    }
-
-    func toggleLike(itemID: UUID, userID: UUID) async {
-        guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
-        let wasLiked = items[index].isLiked
-        let target = !wasLiked
-
-        // Optimistic.
-        items[index].isLiked = target
-        items[index].likeCount += target ? 1 : -1
-
-        do {
-            try await posts.setLike(postID: itemID, userID: userID, liked: target)
-        } catch {
-            // Revert — the row index may have shifted while awaiting.
-            if let current = items.firstIndex(where: { $0.id == itemID }) {
-                items[current].isLiked = wasLiked
-                items[current].likeCount += target ? -1 : 1
-            }
             errorMessage = PostError.message(for: error)
         }
     }

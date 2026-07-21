@@ -22,27 +22,37 @@ final class ComposeViewModel {
     var taggedUsers: [Profile] = []
     private(set) var isSubmitting = false
     var errorMessage: String?
+    var myGroups: [GroupListItem] = []
+    var selectedGroupIDs: Set<UUID> = []
 
     private let posts: PostServicing
     private let uploader: MediaUploading
     private let resolver: UsernameResolving
     private let bible: BibleFetching
+    private let groups: GroupServicing
 
     init(posts: PostServicing = PostService.shared,
          uploader: MediaUploading = MediaUploader.shared,
          resolver: UsernameResolving = ProfileService.shared,
-         bible: BibleFetching = BibleService.shared) {
+         bible: BibleFetching = BibleService.shared,
+         groups: GroupServicing = GroupService.shared) {
         self.posts = posts
         self.uploader = uploader
         self.resolver = resolver
         self.bible = bible
+        self.groups = groups
     }
 
     private var trimmedTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    var canSubmit: Bool { !trimmedTitle.isEmpty && !isSubmitting && pendingImages.count <= Self.maxImages }
+    /// An encouragement must reach at least one surface — the timeline or a group.
+    var hasDestination: Bool { sharedToTimeline || !selectedGroupIDs.isEmpty }
+
+    var canSubmit: Bool {
+        !trimmedTitle.isEmpty && hasDestination && !isSubmitting && pendingImages.count <= Self.maxImages
+    }
     var canAddImage: Bool { pendingImages.count < Self.maxImages }
 
     // MARK: Attachments
@@ -93,6 +103,18 @@ final class ComposeViewModel {
                                   position: 0))   // real positions assigned at submit
     }
 
+    /// Loads the caller's groups for the compose multi-select. Non-fatal: if it
+    /// fails, groups just don't appear — the timeline path still works.
+    func loadGroups(userID: UUID) async {
+        do { myGroups = try await groups.fetchMyGroups(userID: userID) }
+        catch { /* leave myGroups empty; not worth blocking compose */ }
+    }
+
+    /// Pre-select a group (the group-timeline "Post here" entry point).
+    func preselect(groupID: UUID) {
+        selectedGroupIDs.insert(groupID)
+    }
+
     // MARK: Submit
 
     /// Uploads images, then writes the post. On failure, sweeps the objects it
@@ -126,6 +148,7 @@ final class ComposeViewModel {
                     return t.isEmpty ? nil : t
                 }(),
                 sharedToTimeline: sharedToTimeline,
+                groupIDs: Array(selectedGroupIDs),
                 verses: verses,
                 media: media,
                 tagUserIDs: taggedUsers.map(\.id)

@@ -165,6 +165,66 @@ final class FakeFriendService: FriendServicing, @unchecked Sendable {
     }
 }
 
+final class FakeGroupService: GroupServicing, @unchecked Sendable {
+    var myGroups: [GroupListItem] = []
+    var invites: [GroupInviteRow] = []
+    var members: [GroupMemberRow] = []
+    var timeline: [FeedItem] = []
+    var createResult: FellowshipGroup?
+    var inviteResult: GroupInvite?
+    var createError: Error?
+    var fetchError: Error?
+    var inviteError: Error?
+    var respondError: Error?
+    private(set) var createdParams: [CreateGroupParams] = []
+    private(set) var invitedCalls: [(groupID: UUID, username: String)] = []
+    private(set) var respondCalls: [(inviteID: UUID, accept: Bool)] = []
+    private(set) var timelineFetchCount = 0
+    private(set) var receivedCursors: [Date?] = []
+    private(set) var myGroupsFetchCount = 0
+    private(set) var incomingInvitesFetchCount = 0
+
+    func createGroup(_ params: CreateGroupParams) async throws -> FellowshipGroup {
+        createdParams.append(params)
+        if let createError { throw createError }
+        return createResult ?? FellowshipGroup(
+            id: UUID(), creatorID: UUID(), name: params.name, description: params.description,
+            checkinCadence: .none, checkinTime: nil, checkinWeekday: nil,
+            timezone: params.timezone, createdAt: Date())
+    }
+    func fetchMyGroups(userID: UUID) async throws -> [GroupListItem] {
+        myGroupsFetchCount += 1
+        if let fetchError { throw fetchError }
+        return myGroups
+    }
+    func fetchMembers(groupID: UUID) async throws -> [GroupMemberRow] {
+        if let fetchError { throw fetchError }
+        return members
+    }
+    func fetchGroupTimeline(groupID: UUID, before: Date?, limit: Int) async throws -> [FeedItem] {
+        receivedCursors.append(before)
+        if let fetchError { throw fetchError }
+        defer { timelineFetchCount += 1 }
+        return timeline
+    }
+    func invite(groupID: UUID, username: String) async throws -> GroupInvite {
+        invitedCalls.append((groupID, username))
+        if let inviteError { throw inviteError }
+        return inviteResult ?? GroupInvite(
+            id: UUID(), groupID: groupID, inviterID: UUID(), inviteeID: UUID(),
+            status: .pending, createdAt: Date(), respondedAt: nil)
+    }
+    func fetchIncomingInvites(userID: UUID) async throws -> [GroupInviteRow] {
+        incomingInvitesFetchCount += 1
+        if let fetchError { throw fetchError }
+        return invites
+    }
+    func respondToInvite(inviteID: UUID, accept: Bool) async throws {
+        respondCalls.append((inviteID, accept))
+        if let respondError { throw respondError }
+    }
+}
+
 /// Builds a FeedItem without going through the network payload.
 enum FeedItemFactory {
     static func make(id: UUID = UUID(),
