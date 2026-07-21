@@ -3,6 +3,8 @@ import PhotosUI
 
 struct ComposeEncouragementView: View {
     let userID: UUID
+    /// When set, the group is pre-selected as a destination (group "Post here").
+    var preselectedGroupID: UUID? = nil
     /// Called with the new post's id after a successful write.
     let onPosted: (UUID) -> Void
 
@@ -130,6 +132,32 @@ struct ComposeEncouragementView: View {
                         }
                     }
 
+                    if !vm.myGroups.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Post to groups").font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.ink)
+                            ForEach(vm.myGroups) { item in
+                                Button {
+                                    if vm.selectedGroupIDs.contains(item.group.id) {
+                                        vm.selectedGroupIDs.remove(item.group.id)
+                                    } else {
+                                        vm.selectedGroupIDs.insert(item.group.id)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: vm.selectedGroupIDs.contains(item.group.id)
+                                              ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(vm.selectedGroupIDs.contains(item.group.id)
+                                                             ? Theme.indigo : Theme.muted)
+                                        Text(item.group.name).foregroundStyle(Theme.ink)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     Toggle("Show on my timeline", isOn: $vm.sharedToTimeline)
                         .font(.subheadline)
                         .tint(Theme.indigo)
@@ -164,6 +192,10 @@ struct ComposeEncouragementView: View {
             }
             .onChange(of: photoItems) { _, items in
                 Task { await loadPhotos(items) }
+            }
+            .task {
+                await vm.loadGroups(userID: userID)
+                if let preselectedGroupID { vm.preselect(groupID: preselectedGroupID) }
             }
         }
     }
