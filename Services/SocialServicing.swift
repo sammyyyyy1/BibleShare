@@ -45,6 +45,23 @@ protocol FriendServicing: Sendable {
     func fetchEdges(userID: UUID) async throws -> [FriendEdge]
 }
 
+protocol GroupServicing: Sendable {
+    /// Create a group; the caller becomes its creator (a `group_members` row).
+    func createGroup(_ params: CreateGroupParams) async throws -> FellowshipGroup
+    /// The caller's groups (member of), each with role + member count.
+    func fetchMyGroups(userID: UUID) async throws -> [GroupListItem]
+    /// A group's members with embedded profiles.
+    func fetchMembers(groupID: UUID) async throws -> [GroupMemberRow]
+    /// A group's timeline (posts targeted at it), newest first.
+    func fetchGroupTimeline(groupID: UUID, before: Date?, limit: Int) async throws -> [FeedItem]
+    /// Creator-only invite by exact username; returns the pending invite row.
+    func invite(groupID: UUID, username: String) async throws -> GroupInvite
+    /// Pending invites addressed to the caller, with embedded group + inviter.
+    func fetchIncomingInvites(userID: UUID) async throws -> [GroupInviteRow]
+    /// Accept (adds membership) or decline (stamps status). Invitee-only.
+    func respondToInvite(inviteID: UUID, accept: Bool) async throws
+}
+
 enum PostError {
     /// Maps a thrown error to user-facing copy, separating the recoverable
     /// (retry) from the terminal (surface and stop).
@@ -59,6 +76,13 @@ enum PostError {
         if text.contains("cannot send a friend request to yourself") { return "You can't add yourself." }
         if text.contains("already friends") { return "You're already friends." }
         if text.contains("no pending friend request") { return "That request is no longer available." }
+        if text.contains("already in this group") { return "You're already in this group." }
+        if text.contains("already a member") { return "They're already a member." }
+        if text.contains("only the group creator can invite") { return "Only the group's creator can invite people." }
+        if text.contains("you can only post to groups you belong to") { return "You can only post to groups you belong to." }
+        if text.contains("at least one destination") { return "Choose your timeline or at least one group." }
+        if text.contains("group name must be") { return "A group name must be 1–60 characters." }
+        if text.contains("no pending invite") { return "That invite is no longer available." }
         if text.contains("42501") || text.lowercased().contains("row-level security") {
             return "You don't have permission to do that."
         }
