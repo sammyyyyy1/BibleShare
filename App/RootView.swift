@@ -8,7 +8,7 @@ struct RootView: View {
             switch auth.route {
             case .signedOut:     AuthView()
             case .needsUsername: UsernameSetupView()
-            case .ready:         HomeView()
+            case .ready:         RootTabView()
             }
         }
         .animation(.default, value: auth.route)
