@@ -26,9 +26,12 @@ begin
     raise exception 'authentication required' using errcode = '28000';
   end if;
 
-  -- Distinct, non-empty targets (dedupe guards the ledger PK).
+  -- Distinct, non-empty targets (dedupe guards the ledger PK). NULL elements are
+  -- dropped here so a malformed array collapses to the empty case below (22023)
+  -- rather than falling through to the membership guard's 42501.
   select array_agg(distinct g) into v_groups
-  from unnest(coalesce(p_group_ids, '{}'::uuid[])) as g;
+  from unnest(coalesce(p_group_ids, '{}'::uuid[])) as g
+  where g is not null;
   if v_groups is null then
     raise exception 'a check-in needs at least one group' using errcode = '22023';
   end if;
@@ -76,6 +79,10 @@ begin
   -- Per group: assert an active, unanswered window, then fan out. A raise here
   -- rolls back the whole statement — the submission is atomic.
   foreach v_group in array v_groups loop
+    -- Explicit reset: SELECT INTO already nulls the target on a zero-row match,
+    -- but stating it keeps the per-iteration guard obvious to a reader.
+    v_window := null;
+
     select w.id into v_window
     from public.group_checkin_windows w
     where w.group_id = v_group
@@ -91,13 +98,17 @@ begin
     values (v_post_id, v_group)
     on conflict do nothing;
 
-    begin
-      insert into public.group_checkins (group_id, user_id, window_id, post_id)
-      values (v_group, v_uid, v_window, v_post_id);
-    exception
-      when unique_violation then
-        raise exception 'already checked in' using errcode = '22023';
-    end;
+    -- Detect an already-answered window via the ledger PK specifically, rather
+    -- than catching any unique_violation: Plan 6 attaches a member_checked_in
+    -- trigger to this table, and a unique index touched by that trigger would
+    -- otherwise be silently re-reported to the client as "already checked in".
+    insert into public.group_checkins (group_id, user_id, window_id, post_id)
+    values (v_group, v_uid, v_window, v_post_id)
+    on conflict (group_id, user_id, window_id) do nothing;
+
+    if not found then
+      raise exception 'already checked in' using errcode = '22023';
+    end if;
   end loop;
 
   -- Attachments (identical to create_encouragement).
