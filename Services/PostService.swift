@@ -25,6 +25,10 @@ final class PostService: PostServicing {
         try await client.rpc("create_encouragement", params: params).execute().value
     }
 
+    func checkIn(_ params: CheckInParams) async throws -> UUID {
+        try await client.rpc("check_in", params: params).execute().value
+    }
+
     func deletePost(id: UUID, imagePaths: [String]) async throws {
         // Storage-first: if the sweep fails, the post (and its images) survives
         // and the user can retry — there is no cleanup job anywhere in this
