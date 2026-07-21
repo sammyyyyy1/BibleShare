@@ -43,6 +43,7 @@ struct CreateEncouragementParams: Encodable, Sendable {
     var title: String
     var body: String?
     var sharedToTimeline: Bool
+    var groupIDs: [UUID] = []
     var verses: [NewVerse]
     var media: [NewMediaItem]
     var tagUserIDs: [UUID]
@@ -51,8 +52,44 @@ struct CreateEncouragementParams: Encodable, Sendable {
         case title = "p_title"
         case body = "p_body"
         case sharedToTimeline = "p_shared_to_timeline"
+        case groupIDs = "p_group_ids"
         case verses = "p_verses"
         case media = "p_media"
         case tagUserIDs = "p_tag_user_ids"
+    }
+
+    // `UUID.uuidString` is uppercase; Postgres renders lowercase (see
+    // MediaUploader's path-lowercasing note), so `p_group_ids` is lowercased
+    // explicitly here rather than relying on the synthesized encoder.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title)
+        try c.encodeIfPresent(body, forKey: .body)
+        try c.encode(sharedToTimeline, forKey: .sharedToTimeline)
+        try c.encode(groupIDs.map { $0.uuidString.lowercased() }, forKey: .groupIDs)
+        try c.encode(verses, forKey: .verses)
+        try c.encode(media, forKey: .media)
+        try c.encode(tagUserIDs, forKey: .tagUserIDs)
+    }
+}
+
+/// Params for the `create_group` RPC. Keys mirror the RPC's parameter names.
+/// `cadence`/`time`/`weekday`/`timezone` are stored dormant in Plan 4 — the
+/// create-group UI leaves them at their defaults (Plan 5 owns schedule UI).
+struct CreateGroupParams: Encodable, Sendable {
+    var name: String
+    var description: String?
+    var cadence: String = "none"
+    var time: String?
+    var weekday: Int?
+    var timezone: String = "America/New_York"
+
+    enum CodingKeys: String, CodingKey {
+        case name = "p_name"
+        case description = "p_description"
+        case cadence = "p_cadence"
+        case time = "p_time"
+        case weekday = "p_weekday"
+        case timezone = "p_timezone"
     }
 }
