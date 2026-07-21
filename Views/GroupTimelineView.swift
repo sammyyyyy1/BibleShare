@@ -48,7 +48,7 @@ struct GroupTimelineView: View {
                         isMine: item.authorID == myID,
                         onLike: { Task { await vm.toggleLike(itemID: item.id) } },
                         onComment: { commentingOn = item },
-                        onDelete: {}
+                        onDelete: { Task { await vm.delete(itemID: item.id) } }
                     )
                     .onAppear {
                         if item.id == vm.items.last?.id { Task { await vm.loadMore() } }

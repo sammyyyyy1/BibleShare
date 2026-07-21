@@ -46,6 +46,19 @@ struct GroupTimelineViewModelTests {
         #expect(fakePosts.likeCalls.first?.liked == true)
     }
 
+    @Test func deleteRemovesPostAndCallsService() async throws {
+        let fakeGroup = FakeGroupService()
+        let post = try FeedItemFactory.make()
+        fakeGroup.timeline = [post]
+        let fakePosts = FakePostService()
+        let vm = GroupTimelineViewModel(groupID: groupID, myID: myID,
+                                        groupService: fakeGroup, feed: FakeFeedService(), posts: fakePosts)
+        await vm.load()
+        await vm.delete(itemID: post.id)
+        #expect(vm.items.isEmpty)
+        #expect(fakePosts.deletedPosts.contains(post.id))
+    }
+
     @Test func inviteRecordsUsernameAndReportsSuccess() async {
         let fakeGroup = FakeGroupService()
         let vm = GroupTimelineViewModel(groupID: groupID, myID: myID,
