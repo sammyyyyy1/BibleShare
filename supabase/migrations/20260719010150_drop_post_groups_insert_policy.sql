@@ -14,5 +14,13 @@
 -- bypass RLS entirely — they never relied on this policy. post_groups keeps its
 -- SELECT policy (pg_select_visible), so the RPCs remain the only write path,
 -- matching group_checkins and the group tables.
+--
+-- Why post_groups and NOT the other attachment tables: post_verses, post_media
+-- and post_tags correctly keep their owner-INSERT policies because they carry
+-- CONTENT for a post whose audience is already fixed — adding a verse to your
+-- own post shows it to nobody new. post_groups is the only attachment table
+-- where a direct insert grants DISTRIBUTION: it decides who can see the post at
+-- all. That is why an unconstrained INSERT here is a visibility/integrity hole
+-- and an unconstrained INSERT there is not.
 
 drop policy if exists pg_insert_owner_member on public.post_groups;
