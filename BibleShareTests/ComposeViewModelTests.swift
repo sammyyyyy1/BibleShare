@@ -212,4 +212,56 @@ struct ComposeViewModelTests {
         #expect(vm.taggedUsers.count == 1)
         #expect(vm.errorMessage != nil, "an unknown username is an error, not a silent drop")
     }
+
+    @MainActor
+    @Test func cannotSubmitWithNoDestination() {
+        let vm = ComposeViewModel(posts: FakePostService(), uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        vm.title = "Hello"
+        vm.sharedToTimeline = false
+        #expect(vm.canSubmit == false)          // no timeline, no group
+        vm.selectedGroupIDs = [UUID()]
+        #expect(vm.canSubmit == true)           // a group is a destination
+    }
+
+    @MainActor
+    @Test func submitPassesSelectedGroupIDs() async {
+        let fakePosts = FakePostService()
+        let vm = ComposeViewModel(posts: fakePosts, uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        let g = UUID()
+        vm.title = "Hello"
+        vm.sharedToTimeline = false
+        vm.selectedGroupIDs = [g]
+        _ = await vm.submit(userID: UUID())
+        #expect(fakePosts.createdParams.first?.groupIDs == [g])
+        #expect(fakePosts.createdParams.first?.sharedToTimeline == false)
+    }
+
+    @MainActor
+    @Test func loadGroupsPopulatesMyGroups() async {
+        let fakeGroups = FakeGroupService()
+        fakeGroups.myGroups = [GroupListItem(role: "member",
+            group: FellowshipGroup(id: UUID(), creatorID: UUID(), name: "G", description: nil,
+                                   checkinCadence: .none, checkinTime: nil, checkinWeekday: nil,
+                                   timezone: "America/New_York", createdAt: Date()),
+            memberCount: 1)]
+        let vm = ComposeViewModel(posts: FakePostService(), uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: fakeGroups)
+        await vm.loadGroups(userID: UUID())
+        #expect(vm.myGroups.count == 1)
+    }
+
+    @MainActor
+    @Test func preselectSelectsGroup() {
+        let vm = ComposeViewModel(posts: FakePostService(), uploader: FakeMediaUploader(),
+                                  resolver: FakeUsernameResolver(), bible: FakeBibleService(),
+                                  groups: FakeGroupService())
+        let g = UUID()
+        vm.preselect(groupID: g)
+        #expect(vm.selectedGroupIDs.contains(g))
+    }
 }
