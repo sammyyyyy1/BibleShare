@@ -282,6 +282,12 @@ final class FakeNotificationService: NotificationServicing, @unchecked Sendable 
     private(set) var registeredTokens: [String] = []
     private(set) var unregisteredTokens: [String] = []
 
+    /// Fires mid-flight inside `markRead`, before success/failure is decided —
+    /// lets tests observe optimistic UI state (e.g. run a fresher `load()`)
+    /// while the "server call" is in flight. Async (unlike `onSetLike`)
+    /// because the test needs to `await vm.load()` from inside it.
+    var onMarkRead: (@MainActor () async -> Void)?
+
     func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem] {
         if let fetchError { throw fetchError }
         return items
@@ -292,6 +298,7 @@ final class FakeNotificationService: NotificationServicing, @unchecked Sendable 
     }
     func markRead(ids: [UUID]?) async throws {
         markReadCalls.append(ids)
+        await onMarkRead?()
         if let markReadError { throw markReadError }
     }
     func registerDeviceToken(_ token: String) async throws { registeredTokens.append(token) }

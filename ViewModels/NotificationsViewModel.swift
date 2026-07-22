@@ -38,6 +38,13 @@ final class NotificationsViewModel {
     private let service: NotificationServicing
     private let pageSize = 40
 
+    /// Bumped once per successful `load()`, right after it assigns `items`
+    /// and `unreadCount` from the server. A mark-read rollback captures this
+    /// before its `await` and compares it again in its `catch`: if it moved,
+    /// a fresher load has already replaced the snapshot it would otherwise
+    /// restore, so the rollback must not happen.
+    private var generation = 0
+
     init(service: NotificationServicing = NotificationService.shared) {
         self.service = service
     }
@@ -49,6 +56,7 @@ final class NotificationsViewModel {
         do {
             items = try await service.fetchNotifications(before: nil, limit: pageSize)
             unreadCount = try await service.unreadCount()
+            generation += 1
         } catch {
             errorMessage = PostError.message(for: error)
         }
@@ -70,29 +78,43 @@ final class NotificationsViewModel {
         // rolls back wholesale if the write fails.
         let snapshotItems = items
         let snapshotCount = unreadCount
+        let snapshotGeneration = generation
         let now = Date()
         for index in items.indices where items[index].isUnread { items[index].readAt = now }
         unreadCount = 0
         do {
             try await service.markRead(ids: nil)
         } catch {
-            items = snapshotItems
-            unreadCount = snapshotCount
+            // If `generation` moved while this write was in flight, a fresher
+            // `load()` landed and already replaced `items`/`unreadCount` with
+            // server truth. The failed write never touched server state, so
+            // that fresher data is already correct — restoring this snapshot
+            // would clobber it with the stale pre-load rows. Only roll back
+            // when nothing newer has superseded the snapshot.
+            if generation == snapshotGeneration {
+                items = snapshotItems
+                unreadCount = snapshotCount
+            }
             errorMessage = PostError.message(for: error)
         }
     }
 
     func markRead(_ item: NotificationItem) async {
-        guard item.isUnread, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        guard let index = items.firstIndex(where: { $0.id == item.id }), items[index].isUnread else { return }
         let snapshotItems = items
         let snapshotCount = unreadCount
+        let snapshotGeneration = generation
         items[index].readAt = Date()
         unreadCount = max(0, unreadCount - 1)
         do {
             try await service.markRead(ids: [item.id])
         } catch {
-            items = snapshotItems
-            unreadCount = snapshotCount
+            // See markAllRead: a generation bump means a newer load already
+            // superseded this snapshot, so leave the fresher state alone.
+            if generation == snapshotGeneration {
+                items = snapshotItems
+                unreadCount = snapshotCount
+            }
             errorMessage = PostError.message(for: error)
         }
     }
