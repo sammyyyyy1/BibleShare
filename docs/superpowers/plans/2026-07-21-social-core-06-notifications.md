@@ -15,7 +15,7 @@
 - **RLS helpers live in `private`, never `public`.** Policies call `private.*`.
 - **All writes go through `SECURITY DEFINER` RPCs.** No broad client write policies on any table this plan touches.
 - **Every definer function sets `search_path = public`.**
-- **Function grant convention** (match it exactly): a `private` helper called from an **RLS policy** gets `grant execute ... to authenticated`; a `private` helper called only from definer functions, cron, or triggers gets **no grant** and an explicit `revoke all ... from public`. A new **public** RPC gets `grant execute ... to authenticated, service_role`.
+- **Function grant convention** (match it exactly): a `private` helper called from an **RLS policy** gets `grant execute ... to authenticated`; a `private` helper called only from definer functions, cron, or triggers gets **no grant** and an explicit `revoke all ... from public`. A new **public** RPC gets **both** `revoke execute ... from public, anon;` **and** `grant execute ... to authenticated, service_role;` — the revoke is **not optional**. Postgres grants `EXECUTE` to `PUBLIC` by default, so a bare `grant` leaves the RPC callable by `anon` and raises an extra `anon_security_definer_function_executable` advisor WARN. All five prior RPC migrations in this repo (`friend_rpcs`, `create_group_rpc`, `invite_respond_rpcs`, `checkin_rpcs`, `encouragement_group_targeting`) include the revoke.
 - **After any RLS/RPC change run `get_advisors type:"security"`.** Expect only the accepted definer-executable WARN per new public RPC. Anything else new is a defect.
 - **DB verification split:** the implementing subagent writes, commits, applies, and runs **read-only** checks only (`pg_get_functiondef`, policy expressions, advisor diff). Subagent `INSERT`s into `auth.users` are blocked by the permission classifier. The **controller** runs every fixture seed → assertion → teardown block.
 - **Teardown assertions must be scoped to fixture ids.** The live DB holds production rows; bare `count = 0` assertions fail spuriously.
@@ -373,6 +373,7 @@ begin
      and (p_ids is null or id = any(p_ids));
 end;
 $$;
+revoke execute on function public.mark_notifications_read(uuid[]) from public, anon;
 grant execute on function public.mark_notifications_read(uuid[]) to authenticated, service_role;
 
 -- === device_tokens: FOR ALL is the broadest possible client write grant ===
@@ -407,6 +408,7 @@ begin
     do update set updated_at = now(), platform = excluded.platform;
 end;
 $$;
+revoke execute on function public.register_device_token(text, text) from public, anon;
 grant execute on function public.register_device_token(text, text) to authenticated, service_role;
 
 create or replace function public.unregister_device_token(p_token text)
@@ -421,6 +423,7 @@ begin
    where user_id = v_uid and token = btrim(coalesce(p_token, ''));
 end;
 $$;
+revoke execute on function public.unregister_device_token(text) from public, anon;
 grant execute on function public.unregister_device_token(text) to authenticated, service_role;
 
 -- === profiles: the invite counterparty ===

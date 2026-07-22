@@ -23,6 +23,7 @@ begin
      and (p_ids is null or id = any(p_ids));
 end;
 $$;
+revoke execute on function public.mark_notifications_read(uuid[]) from public, anon;
 grant execute on function public.mark_notifications_read(uuid[]) to authenticated, service_role;
 
 -- === device_tokens: FOR ALL is the broadest possible client write grant ===
@@ -57,6 +58,7 @@ begin
     do update set updated_at = now(), platform = excluded.platform;
 end;
 $$;
+revoke execute on function public.register_device_token(text, text) from public, anon;
 grant execute on function public.register_device_token(text, text) to authenticated, service_role;
 
 create or replace function public.unregister_device_token(p_token text)
@@ -71,6 +73,7 @@ begin
    where user_id = v_uid and token = btrim(coalesce(p_token, ''));
 end;
 $$;
+revoke execute on function public.unregister_device_token(text) from public, anon;
 grant execute on function public.unregister_device_token(text) to authenticated, service_role;
 
 -- === profiles: the invite counterparty ===
