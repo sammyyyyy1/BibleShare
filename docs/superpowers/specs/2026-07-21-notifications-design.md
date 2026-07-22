@@ -367,9 +367,16 @@ Rows are grouped by day, show actor avatar + composed copy + relative timestamp,
 
 ### 8.4 Deep links
 
-A `NotificationDestination` enum (`.post(UUID)`, `.group(UUID)`, `.invites`, `.friends`) resolved from `(type, post_id, group_id)` by a **pure mapping function**, unit-tested independently of navigation. Tapping a row routes within the existing tabs. When APNs lands, the remote-tap handler resolves the same enum from the payload's `data` object — no new routing logic.
+A `NotificationDestination` enum (`.post(UUID)`, `.group(UUID)`, `.invites`, `.friends`) resolved from `(type, post_id, group_id)` by a **pure mapping function**, unit-tested independently of navigation. When APNs lands, the remote-tap handler resolves the same enum from the payload's `data` object — no new routing logic.
 
-A destination whose target is no longer visible (post deleted, group left) surfaces a non-fatal "That's no longer available" rather than navigating into an empty screen.
+**Routing is tab-level, deliberately.** Tapping a row selects the owning tab via a `TabView(selection:)` binding. Screen-level deep links are **out of scope for this plan**, because the current navigation cannot express them:
+
+- there is **no post-detail screen** at all — posts render as cells inside `TimelineView` / `GroupTimelineView`, so `.post` has no destination to push;
+- `FriendsView` is a **sheet** driven by private `@State` in `ProfileView`, and `GroupTimelineView` is a `NavigationLink` inside `GroupsView`'s list, so neither is reachable without hoisting that state.
+
+Delivering screen-level routing would mean refactoring three existing views' navigation — unrelated work that this milestone should not absorb. The enum is the seam: when a post-detail screen and hoisted navigation paths exist, only the router changes.
+
+A destination that cannot be resolved at all (a check-in whose post was deleted and which carries no group) surfaces a non-fatal "That's no longer available" rather than selecting a tab that will show nothing.
 
 ### 8.5 Push registration
 
