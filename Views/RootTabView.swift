@@ -40,6 +40,7 @@ struct RootTabView: View {
         .task {
             await checkInVM.load()
             await notificationsVM.load()
+            await PushRegistrar.shared.registerAfterLogin()
         }
     }
 }

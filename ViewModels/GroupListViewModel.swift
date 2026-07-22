@@ -10,10 +10,17 @@ final class GroupListViewModel {
 
     let myID: UUID
     private let service: GroupServicing
+    /// Defaults to the real scheduler; tests substitute a recorder so the suite
+    /// never touches UNUserNotificationCenter.
+    private let scheduleReminders: @Sendable ([FellowshipGroup]) async -> Void
 
-    init(myID: UUID, service: GroupServicing = GroupService.shared) {
+    init(myID: UUID,
+         service: GroupServicing = GroupService.shared,
+         scheduleReminders: (@Sendable ([FellowshipGroup]) async -> Void)? = nil) {
         self.myID = myID
         self.service = service
+        self.scheduleReminders = scheduleReminders
+            ?? { await CheckinReminderScheduler.sync(groups: $0) }
     }
 
     func load() async {
@@ -26,6 +33,11 @@ final class GroupListViewModel {
             async let invitesTask = service.fetchIncomingInvites(userID: myID)
             groups = try await groupsTask
             invites = try await invitesTask
+            // Reminders mirror the group list, so refreshing them here means a
+            // changed schedule -- or a group the user left -- cannot strand a
+            // stale local notification. sync() replaces this app's own requests
+            // wholesale, so calling it on every load is idempotent, not additive.
+            await scheduleReminders(groups.map(\.group))
         } catch {
             errorMessage = PostError.message(for: error)
         }

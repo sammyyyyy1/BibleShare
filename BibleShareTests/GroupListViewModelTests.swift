@@ -43,6 +43,28 @@ struct GroupListViewModelTests {
         #expect(fake.myGroupsFetchCount >= 1)
         #expect(fake.incomingInvitesFetchCount >= 1)
     }
+
+    @Test func loadSchedulesRemindersForTheLoadedGroups() async {
+        let fake = FakeGroupService()
+        let group = FellowshipGroup(id: UUID(), creatorID: UUID(), name: "Daily Crew",
+                                    description: nil, checkinCadence: .daily,
+                                    checkinTime: "08:00:00", checkinWeekday: nil,
+                                    timezone: "UTC", createdAt: Date())
+        fake.myGroups = [GroupListItem(role: "creator", group: group, memberCount: 2)]
+        let scheduled = Scheduled()
+        let vm = GroupListViewModel(myID: UUID(), service: fake,
+                                    scheduleReminders: { await scheduled.record($0) })
+
+        await vm.load()
+
+        #expect(await scheduled.groups.map(\.id) == [group.id])
+    }
+
+    /// Actor because the closure is `@Sendable` and crosses isolation.
+    private actor Scheduled {
+        var groups: [FellowshipGroup] = []
+        func record(_ g: [FellowshipGroup]) { groups = g }
+    }
 }
 
 /// A trivial Error for exercising error paths in ViewModel tests.
