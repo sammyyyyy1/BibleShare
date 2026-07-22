@@ -13,8 +13,16 @@ const COPY: Record<string, (actor: string, group: string | null) => [string, str
   friend_accepted: (a) => ["Friend request accepted", `${a} accepted your friend request`],
 };
 
+// MODULE SCOPE, deliberately. ApnsTransport caches its ES256 provider JWT for
+// ~50 minutes, but that cache only means anything if the instance outlives a
+// single request. Constructing the transport inside the handler would mint a
+// brand-new provider JWT on every invocation -- and with the drain cron firing
+// once a minute Apple would answer TooManyProviderTokenUpdates, so push would
+// fail systemically the day it goes live. An Edge Function isolate is reused
+// across invocations while warm, so hoisting this is what makes the cache real.
+const transport = resolveTransport();
+
 Deno.serve(async () => {
-  const transport = resolveTransport();
   const db = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -42,11 +50,21 @@ Deno.serve(async () => {
     return Response.json({ transport: "noop", pending: pending?.length ?? 0, sent: 0, failed: 0, pruned: 0 });
   }
 
-  let sent = 0, failed = 0, pruned = 0;
+  // NOT SINGLE-FLIGHT. Rows are selected before pushed_at is stamped, so two
+  // overlapping drains would select and send the same rows twice. Unreachable
+  // today (nothing schedules this; the only caller is manual invocation), but
+  // it becomes reachable the moment the per-minute cron in
+  // 20260720010400_push_cron.sql is enabled -- which is why that migration
+  // names single-flight as a precondition of switching it on. A session
+  // advisory lock is NOT a fix here: the pooler hands out a different
+  // connection per request, so the lock would not span these statements.
+  let sent = 0, failed = 0, pruned = 0, noTokens = 0;
   for (const n of pending ?? []) {
     const { data: tokens } = await db
       .from("device_tokens").select("token").eq("user_id", n.recipient_id);
-    if (!tokens?.length) continue;
+    // Counted rather than silently skipped, so "nobody registered a device" is
+    // distinguishable from "delivery failed" in the response metrics.
+    if (!tokens?.length) { noTokens++; continue; }
 
     const build = COPY[n.type];
     if (!build) { failed++; continue; }
@@ -60,23 +78,37 @@ Deno.serve(async () => {
       data: { type: n.type, notification_id: n.id, post_id: n.post_id, group_id: n.group_id },
     };
 
+    // One bad row must not strand every remaining row in this tick. A throw
+    // here (malformed PEM, DNS failure, socket reset) is treated exactly like a
+    // retryable send failure: pushed_at stays null and the next run retries.
     let delivered = false;
-    for (const { token } of tokens) {
-      const r = await transport.send(token, payload);
-      if (r.ok) { delivered = true; continue; }
-      if (r.unregistered) {
-        await db.from("device_tokens").delete().eq("token", token);
-        pruned++;
+    try {
+      for (const { token } of tokens) {
+        const r = await transport.send(token, payload);
+        if (r.ok) { delivered = true; continue; }
+        if (r.unregistered) {
+          await db.from("device_tokens").delete().eq("token", token);
+          pruned++;
+        }
       }
+    } catch (e) {
+      console.error(`[push] send failed for notification ${n.id}:`, e);
     }
 
     if (delivered) {
-      await db.from("notifications").update({ pushed_at: new Date().toISOString() }).eq("id", n.id);
+      // Guarded on pushed_at still being null so a concurrent drain cannot
+      // move an already-stamped timestamp. This bounds the damage of an
+      // overlap; it does not prevent the duplicate send itself.
+      await db.from("notifications")
+        .update({ pushed_at: new Date().toISOString() })
+        .eq("id", n.id).is("pushed_at", null);
       sent++;
     } else {
       failed++;  // retryable: pushed_at stays null, next run picks it up
     }
   }
 
-  return Response.json({ transport: transport.name, pending: pending?.length ?? 0, sent, failed, pruned });
+  return Response.json({
+    transport: transport.name, pending: pending?.length ?? 0, sent, failed, pruned, noTokens,
+  });
 });

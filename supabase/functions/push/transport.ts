@@ -39,13 +39,20 @@ export class ApnsTransport implements PushTransport {
     private readonly host = "https://api.push.apple.com",
   ) {}
 
-  /** APNs rejects tokens older than 1h; refresh at 50m. */
+  /**
+   * APNs rejects provider tokens older than 1h and also rejects regenerating
+   * them too often (TooManyProviderTokenUpdates), so refresh at 50 minutes.
+   * This cache is only meaningful because index.ts constructs the transport at
+   * MODULE scope -- a per-request instance would mint a new JWT every tick.
+   */
   private async authToken(): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
     if (this.jwt && now - this.jwtIssuedAt < 3000) return this.jwt;
 
     const header = { alg: "ES256", kid: this.keyId };
     const claims = { iss: this.teamId, iat: now };
+    // btoa is Latin-1 only, which is safe here: kid and iss are Apple-issued
+    // ASCII identifiers (10-char alphanumeric), never user input.
     const b64 = (o: unknown) =>
       btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const signingInput = `${b64(header)}.${b64(claims)}`;
