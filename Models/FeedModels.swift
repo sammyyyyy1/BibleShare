@@ -225,9 +225,15 @@ struct NotificationItem: Decodable, Identifiable, Hashable, Sendable {
     var isUnread: Bool { readAt == nil }
 
     /// Neutral fallback so a hidden actor reads as "Someone liked your post"
-    /// rather than an empty row.
+    /// rather than an empty row. `display_name` is unconstrained text, so a
+    /// blank (empty or whitespace-only) value is treated the same as absent
+    /// and falls through to the next rung.
     var actorName: String {
-        actor?.displayName ?? actor?.username ?? "Someone"
+        let displayName = actor?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let displayName, !displayName.isEmpty {
+            return displayName
+        }
+        return actor?.username ?? "Someone"
     }
 
     enum CodingKeys: String, CodingKey {
