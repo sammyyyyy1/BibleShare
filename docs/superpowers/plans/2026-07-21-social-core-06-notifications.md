@@ -2393,17 +2393,78 @@ changed or left group cannot strand a reminder."
 
 ---
 
-## Task 10: APNs registration wiring
+## Task 10: Notification wiring — APNs registration + reminder scheduling
 
-Spec §8.5. Completes the seam so enabling APNs needs no Swift change.
+Spec §8.5 and §7.4. Completes the seam so enabling APNs needs no Swift change, **and gives the Task 9 reminder scheduler a call site**.
 
 **Files:**
 - Create: `Services/PushRegistrar.swift`
-- Modify: `App/BibleShareApp.swift`, `project.yml`
+- Modify: `App/BibleShareApp.swift`, `project.yml`, `Resources/Info.plist`, `Views/RootTabView.swift`, `ViewModels/GroupListViewModel.swift`, `BibleShareTests/GroupListViewModelTests.swift`
 
 **Interfaces:**
-- Consumes: `NotificationServicing` (Task 6), `CheckinReminderScheduler.requestAuthorization` (Task 9)
+- Consumes: `NotificationServicing` (Task 6), `CheckinReminderScheduler.requestAuthorization` / `.sync(groups:)` (Task 9)
 - Produces: `PushRegistrar.shared`, `AppDelegate`
+
+> **Why this task grew:** Task 9 built `CheckinReminderScheduler` but the plan never gave `sync(groups:)` a caller, so local reminders were dead code — nothing would ever schedule one. Spec §7.4 says scheduling refreshes whenever the group list loads, so `GroupListViewModel` is the call site. Step 0 below closes that.
+
+- [ ] **Step 0: Give the reminder scheduler a call site**
+
+Write the failing test first, in `BibleShareTests/GroupListViewModelTests.swift`:
+
+```swift
+    @Test func loadSchedulesRemindersForTheLoadedGroups() async {
+        let fake = FakeGroupService()
+        let group = FellowshipGroup(id: UUID(), creatorID: UUID(), name: "Daily Crew",
+                                    description: nil, checkinCadence: .daily,
+                                    checkinTime: "08:00:00", checkinWeekday: nil,
+                                    timezone: "UTC", createdAt: Date())
+        fake.myGroups = [GroupListItem(role: "creator", group: group, memberCount: 2)]
+        let scheduled = Scheduled()
+        let vm = GroupListViewModel(myID: UUID(), service: fake,
+                                    scheduleReminders: { await scheduled.record($0) })
+
+        await vm.load()
+
+        #expect(await scheduled.groups.map(\.id) == [group.id])
+    }
+
+    /// Actor because the closure is `@Sendable` and crosses isolation.
+    private actor Scheduled {
+        var groups: [FellowshipGroup] = []
+        func record(_ g: [FellowshipGroup]) { groups = g }
+    }
+```
+
+> Check `FakeGroupService`'s existing property name for the groups it returns (it may be `myGroups` or similar) and use the real one. Do **not** rename it — other tests depend on it.
+
+Then add the seam to `ViewModels/GroupListViewModel.swift`, following the injectable-closure pattern already used by `PostService.deleteRow`:
+
+```swift
+    /// Defaults to the real scheduler; tests substitute a recorder so the suite
+    /// never touches UNUserNotificationCenter.
+    private let scheduleReminders: @Sendable ([FellowshipGroup]) async -> Void
+
+    init(myID: UUID,
+         service: GroupServicing = GroupService.shared,
+         scheduleReminders: (@Sendable ([FellowshipGroup]) async -> Void)? = nil) {
+        self.myID = myID
+        self.service = service
+        self.scheduleReminders = scheduleReminders
+            ?? { await CheckinReminderScheduler.sync(groups: $0) }
+    }
+```
+
+and call it inside `load()`, after `groups` is assigned and only on the success path:
+
+```swift
+            groups = try await groupsTask
+            invites = try await invitesTask
+            // Reminders mirror the group list, so refreshing them here means a
+            // changed schedule -- or a group the user left -- cannot strand a
+            // stale local notification. sync() replaces this app's own requests
+            // wholesale, so calling it on every load is idempotent, not additive.
+            await scheduleReminders(groups.map(\.group))
+```
 
 - [ ] **Step 1: Add the background mode**
 
