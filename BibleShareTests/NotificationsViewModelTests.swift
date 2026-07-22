@@ -111,4 +111,50 @@ struct NotificationsViewModelTests {
 
         #expect(vm.unreadCount == 1)
     }
+
+    /// A `loadMore()` that lands mid-flight during a failing mark-write must
+    /// not have its appended rows wiped out by the mark-write's rollback: the
+    /// page it fetched is newer truth, not the stale pre-write snapshot.
+    @Test func loadMoreMidFlightSurvivesAFailingMarkWriteRollback() async {
+        let fake = FakeNotificationService()
+        fake.items = [unreadItem(), unreadItem()]
+        fake.unread = 2
+        let vm = NotificationsViewModel(service: fake)
+        await vm.load()
+
+        fake.markReadError = PostErrorStub.boom
+        let olderPage = [unreadItem()]
+        fake.onMarkRead = {
+            fake.items = olderPage
+            await vm.loadMore()
+        }
+
+        await vm.markAllRead()
+
+        #expect(vm.items.count == 3)
+    }
+
+    /// If a second mark-write completes successfully while a first mark-write
+    /// is still in flight, and the first then fails, the first's rollback
+    /// must not resurrect rows the second already confirmed read server-side.
+    @Test func secondMarkWriteSucceedingSurvivesFirstsFailureRollback() async {
+        let fake = FakeNotificationService()
+        let itemA = unreadItem()
+        let itemB = unreadItem()
+        fake.items = [itemA, itemB]
+        fake.unread = 2
+        let vm = NotificationsViewModel(service: fake)
+        await vm.load()
+
+        fake.onMarkRead = {
+            fake.onMarkRead = nil // avoid recursing into itself for B's own write
+            await vm.markRead(itemB)
+            fake.markReadError = PostErrorStub.boom
+        }
+
+        await vm.markRead(itemA)
+
+        #expect(vm.unreadCount == 0)
+        #expect(vm.items.allSatisfy { !$0.isUnread })
+    }
 }

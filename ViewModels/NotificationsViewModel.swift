@@ -38,11 +38,14 @@ final class NotificationsViewModel {
     private let service: NotificationServicing
     private let pageSize = 40
 
-    /// Bumped once per successful `load()`, right after it assigns `items`
-    /// and `unreadCount` from the server. A mark-read rollback captures this
-    /// before its `await` and compares it again in its `catch`: if it moved,
-    /// a fresher load has already replaced the snapshot it would otherwise
-    /// restore, so the rollback must not happen.
+    /// Bumped by every path that writes newer truth into `items`/`unreadCount`:
+    /// `load()` after it assigns from the server, `loadMore()` after it
+    /// appends a page, and `markAllRead()`/`markRead(_:)` after their write
+    /// succeeds. A mark-read rollback captures this before its `await` and
+    /// compares it again in its `catch`: if it moved, something newer has
+    /// already landed on top of the snapshot it would otherwise restore, so
+    /// the rollback must not happen — it would clobber confirmed state with
+    /// stale pre-write data.
     private var generation = 0
 
     init(service: NotificationServicing = NotificationService.shared) {
@@ -68,6 +71,7 @@ final class NotificationsViewModel {
         defer { isLoading = false }
         do {
             items += try await service.fetchNotifications(before: oldest, limit: pageSize)
+            generation += 1
         } catch {
             errorMessage = PostError.message(for: error)
         }
@@ -84,13 +88,15 @@ final class NotificationsViewModel {
         unreadCount = 0
         do {
             try await service.markRead(ids: nil)
+            generation += 1
         } catch {
-            // If `generation` moved while this write was in flight, a fresher
-            // `load()` landed and already replaced `items`/`unreadCount` with
-            // server truth. The failed write never touched server state, so
-            // that fresher data is already correct — restoring this snapshot
-            // would clobber it with the stale pre-load rows. Only roll back
-            // when nothing newer has superseded the snapshot.
+            // If `generation` moved while this write was in flight, something
+            // newer has already landed on top of this snapshot — a fresher
+            // `load()`/`loadMore()`, or another mark-write that succeeded —
+            // and already replaced `items`/`unreadCount` with truth this
+            // failed write never touched. Restoring the snapshot would
+            // clobber that newer state. Only roll back when nothing newer
+            // has superseded the snapshot.
             if generation == snapshotGeneration {
                 items = snapshotItems
                 unreadCount = snapshotCount
@@ -108,8 +114,9 @@ final class NotificationsViewModel {
         unreadCount = max(0, unreadCount - 1)
         do {
             try await service.markRead(ids: [item.id])
+            generation += 1
         } catch {
-            // See markAllRead: a generation bump means a newer load already
+            // See markAllRead: a generation bump means something newer already
             // superseded this snapshot, so leave the fresher state alone.
             if generation == snapshotGeneration {
                 items = snapshotItems
