@@ -8,6 +8,29 @@ enum CheckinReminderScheduler {
     static let maxPending = 48
     private static let prefix = "checkin-"
 
+    /// Strictly parses "HH:MM" or "HH:MM:SS". Every colon-separated segment
+    /// must be entirely numeric - `compactMap { Int($0) }` would silently drop
+    /// a non-numeric segment (e.g. ["aa","00","00"] -> [0,0]), fabricating a
+    /// midnight reminder instead of failing. Here the parsed count must match
+    /// the segment count, there must be 2 or 3 segments, and each value must
+    /// be in range; anything else returns `nil`.
+    private static func parseTimeOfDay(_ hhmmss: String) -> (hour: Int, minute: Int, second: Int)? {
+        let segments = hhmmss.split(separator: ":", omittingEmptySubsequences: false)
+        guard segments.count == 2 || segments.count == 3 else { return nil }
+
+        let parsed = segments.map { Int($0) }
+        guard parsed.allSatisfy({ $0 != nil }) else { return nil }
+        let values = parsed.compactMap { $0 }
+
+        let hour = values[0]
+        let minute = values[1]
+        let second = values.count > 2 ? values[2] : 0
+        guard (0...23).contains(hour), (0...59).contains(minute), (0...59).contains(second)
+        else { return nil }
+
+        return (hour, minute, second)
+    }
+
     /// The next `count` reminder instants for a group, in the GROUP's timezone.
     /// Pure and total: an unusable schedule yields `[]` rather than a guess.
     static func nextOccurrences(for group: FellowshipGroup,
@@ -15,19 +38,17 @@ enum CheckinReminderScheduler {
                                 count: Int) -> [Date] {
         guard group.checkinCadence != .none,
               let hhmmss = group.checkinTime,
-              let zone = TimeZone(identifier: group.timezone)
+              let zone = TimeZone(identifier: group.timezone),
+              let time = parseTimeOfDay(hhmmss)
         else { return [] }
-
-        let parts = hhmmss.split(separator: ":").compactMap { Int($0) }
-        guard parts.count >= 2 else { return [] }
 
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
 
         var components = DateComponents()
-        components.hour = parts[0]
-        components.minute = parts[1]
-        components.second = parts.count > 2 ? parts[2] : 0
+        components.hour = time.hour
+        components.minute = time.minute
+        components.second = time.second
 
         if group.checkinCadence == .weekly {
             guard let weekday = group.checkinWeekday, (0...6).contains(weekday) else { return [] }
@@ -40,9 +61,16 @@ enum CheckinReminderScheduler {
         for _ in 0..<count {
             // matchingPolicy .nextTime resolves a wall-clock time that a DST
             // spring-forward skipped, instead of returning nil.
+            //
+            // repeatedTimePolicy is set explicitly (not left to Foundation's
+            // undocumented default) for the autumn fold, when a wall-clock
+            // time occurs twice. `.first` picks the earlier of the two
+            // instants - the reminder fires at the first real occurrence of
+            // that wall-clock time rather than being delayed by an hour.
             guard let next = calendar.nextDate(after: cursor,
                                                matching: components,
-                                               matchingPolicy: .nextTime) else { break }
+                                               matchingPolicy: .nextTime,
+                                               repeatedTimePolicy: .first) else { break }
             results.append(next)
             cursor = next
         }
