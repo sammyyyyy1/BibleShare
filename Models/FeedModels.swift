@@ -197,3 +197,46 @@ struct CheckinTarget: Decodable, Identifiable, Hashable, Sendable {
         case windowID = "window_id"
     }
 }
+
+/// A notification's post, kept deliberately thinner than `FeedItem` — a
+/// notification row needs a label, not attachments, counts, or an author
+/// embed it may not even be allowed to see.
+struct PostSummary: Decodable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    let kind: PostKind
+    let title: String?
+}
+
+/// One notification row with its PostgREST embeds. `actor` is optional
+/// because RLS can legitimately hide it; rendering must degrade, never blank.
+struct NotificationItem: Decodable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    let recipientID: UUID
+    let type: NotificationType
+    let actorID: UUID?
+    let groupID: UUID?
+    let postID: UUID?
+    var readAt: Date?
+    let createdAt: Date
+    let actor: Profile?
+    let group: FellowshipGroup?
+    let post: PostSummary?
+
+    var isUnread: Bool { readAt == nil }
+
+    /// Neutral fallback so a hidden actor reads as "Someone liked your post"
+    /// rather than an empty row.
+    var actorName: String {
+        actor?.displayName ?? actor?.username ?? "Someone"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, actor, group, post
+        case recipientID = "recipient_id"
+        case actorID = "actor_id"
+        case groupID = "group_id"
+        case postID = "post_id"
+        case readAt = "read_at"
+        case createdAt = "created_at"
+    }
+}

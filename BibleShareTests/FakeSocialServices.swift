@@ -272,3 +272,28 @@ enum FeedItemFactory {
         return item
     }
 }
+
+final class FakeNotificationService: NotificationServicing, @unchecked Sendable {
+    var items: [NotificationItem] = []
+    var unread = 0
+    var fetchError: Error?
+    var markReadError: Error?
+    private(set) var markReadCalls: [[UUID]?] = []
+    private(set) var registeredTokens: [String] = []
+    private(set) var unregisteredTokens: [String] = []
+
+    func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem] {
+        if let fetchError { throw fetchError }
+        return items
+    }
+    func unreadCount() async throws -> Int {
+        if let fetchError { throw fetchError }
+        return unread
+    }
+    func markRead(ids: [UUID]?) async throws {
+        markReadCalls.append(ids)
+        if let markReadError { throw markReadError }
+    }
+    func registerDeviceToken(_ token: String) async throws { registeredTokens.append(token) }
+    func unregisterDeviceToken(_ token: String) async throws { unregisteredTokens.append(token) }
+}
