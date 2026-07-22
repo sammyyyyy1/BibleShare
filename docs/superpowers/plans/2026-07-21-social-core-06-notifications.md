@@ -1308,7 +1308,7 @@ struct NotificationModelTests {
          "post":{"id":"44444444-4444-4444-4444-444444444444",
                  "kind":"encouragement","title":"Morning"}}
         """
-        let item = try TestDecoder.make().decode(NotificationItem.self, from: Data(json.utf8))
+        let item = try TestDecoder.postgrest().decode(NotificationItem.self, from: Data(json.utf8))
         #expect(item.type == .postLike)
         #expect(item.actor?.username == "ruth")
         #expect(item.post?.title == "Morning")
@@ -1327,7 +1327,7 @@ struct NotificationModelTests {
          "created_at":"2026-07-21T10:00:00Z",
          "actor":null,"group":null,"post":null}
         """
-        let item = try TestDecoder.make().decode(NotificationItem.self, from: Data(json.utf8))
+        let item = try TestDecoder.postgrest().decode(NotificationItem.self, from: Data(json.utf8))
         #expect(item.actor == nil)
         #expect(item.actorName == "Someone")
         #expect(item.isUnread == false)
@@ -1349,7 +1349,7 @@ struct NotificationModelTests {
                   "created_at":"2026-07-01T00:00:00Z"},
          "post":null}
         """
-        let item = try TestDecoder.make().decode(NotificationItem.self, from: Data(json.utf8))
+        let item = try TestDecoder.postgrest().decode(NotificationItem.self, from: Data(json.utf8))
         #expect(item.type == .checkinReminder)
         #expect(item.group?.name == "Daily Crew")
     }
@@ -1589,7 +1589,7 @@ struct NotificationDestinationTests {
          "read_at":null,"pushed_at":null,"created_at":"2026-07-21T10:00:00Z",
          "actor":null,"group":null,"post":null}
         """
-        return try! TestDecoder.make().decode(NotificationItem.self, from: Data(json.utf8))
+        return try! TestDecoder.postgrest().decode(NotificationItem.self, from: Data(json.utf8))
     }
 
     @Test func postTypesRouteToThePost() {
@@ -1645,7 +1645,7 @@ struct NotificationsViewModelTests {
          "post_id":"\(UUID().uuidString)","read_at":null,"pushed_at":null,
          "created_at":"2026-07-21T10:00:00Z","actor":null,"group":null,"post":null}
         """
-        return try! TestDecoder.make().decode(NotificationItem.self, from: Data(json.utf8))
+        return try! TestDecoder.postgrest().decode(NotificationItem.self, from: Data(json.utf8))
     }
 
     @Test func loadPopulatesItemsAndUnreadCount() async {
