@@ -20,7 +20,7 @@
 - **DB verification split:** the implementing subagent writes, commits, applies, and runs **read-only** checks only (`pg_get_functiondef`, policy expressions, advisor diff). Subagent `INSERT`s into `auth.users` are blocked by the permission classifier. The **controller** runs every fixture seed → assertion → teardown block.
 - **Teardown assertions must be scoped to fixture ids.** The live DB holds production rows; bare `count = 0` assertions fail spuriously.
 - **iOS:** Swift 6, iOS 17 target, `make generate` after any `project.yml` change, build/test on `platform=iOS Simulator,name=iPhone 17`.
-- **Baseline: 101 tests / 18 suites green.** Keep it green. Changes to `BibleShareTests/FakeSocialServices.swift` are **additive only**. Never edit an existing test to make a change pass.
+- **Baseline: 101 tests / 18 suites green.** Keep it green. The per-task expected counts below are *indicative*: review fix-waves legitimately add tests, so treat the running total as "baseline + this task's new tests" rather than an absolute to match. What is non-negotiable is that the suite is green and no existing test was edited or weakened. Changes to `BibleShareTests/FakeSocialServices.swift` are **additive only**. Never edit an existing test to make a change pass.
 - **A fresh worktree lacks the git-ignored `Resources/Secrets.plist`.** Before the first `xcodebuild test`, run: `cp /Users/sam/Repos/BibleShare/Resources/Secrets.plist Resources/Secrets.plist`
 - **Never run `killall CoreSimulatorService`** — it corrupts this Mac's Xcode 26 disk-image runtime mounts.
 
