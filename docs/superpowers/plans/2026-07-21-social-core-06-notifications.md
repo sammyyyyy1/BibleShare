@@ -207,39 +207,79 @@ Expected: no new findings. `can_tag` is in `private`, so it adds no definer-exec
 
 The subagent must **stop here and report**; the fixture seed below writes `auth.users` and will be classifier-blocked in a subagent.
 
+**Two environment rules govern every verification block in this plan:**
+
+1. `execute_sql` returns **only the last statement's result**, and `set local` / `set_config(...,true)` are transaction-scoped. So a seed + impersonation + assertion + `rollback` must all travel in **one** `execute_sql` call, ending in the single `select` whose output you want to read. Never split them across calls — the impersonation silently evaporates.
+2. Assertions therefore return a labelled result set. Use the `case when … then 'PASS' else 'FAIL' end` shape shown below so one call yields a readable verdict.
+3. **Everything after `set local role authenticated` is RLS-filtered.** A `count(*)` there measures *visibility*, not existence — seeding five profiles and counting them back as the impersonated user correctly returns 3 (self + friend + co-member). Put existence assertions **before** the impersonation lines and visibility assertions after, or the same query silently answers a different question than you meant.
+
+This is the **canonical fixture**, referenced by Tasks 1–3. Three real errors it is written to avoid — all three were hit while validating it live:
+
+- `g` is not a hex digit, so `'…-0000000000g1'::uuid` raises `22P02`.
+- `uuid || text` has no operator; the email needs `v.id::text || '@fixture.test'`.
+- **`handle_new_user` derives the username from the first 12 hex digits of the uuid** (`'user_' || substr(replace(new.id::text,'-',''), 1, 12)`), so fixture ids that differ only in their *last* characters all collide on `profiles_username_key`. These ids differ in the **first** block for that reason — do not "tidy" them into a shared prefix.
+
 ```sql
 begin;
--- Fixture: author A; friend F; stranger S; member M (in group G); non-member N.
+-- A = author, F = friend of A, E = stranger, D = member of G1 (not a friend),
+-- C = spare member used for the multi-group dedupe case.
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password,
                         email_confirmed_at, created_at, updated_at)
-select id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-       id || '@fixture.test', '', now(), now(), now()
-from (values ('00000000-0000-0000-0000-00000000000a'::uuid),
-             ('00000000-0000-0000-0000-00000000000f'::uuid),
-             ('00000000-0000-0000-0000-00000000000e'::uuid),
-             ('00000000-0000-0000-0000-00000000000d'::uuid),
-             ('00000000-0000-0000-0000-00000000000c'::uuid)) v(id);
+select v.id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+       v.id::text || '@fixture.test', '', now(), now(), now()
+from (values ('aaaaaaaa-0000-4000-8000-000000000001'::uuid),
+             ('ffffffff-0000-4000-8000-000000000002'::uuid),
+             ('eeeeeeee-0000-4000-8000-000000000003'::uuid),
+             ('dddddddd-0000-4000-8000-000000000004'::uuid),
+             ('cccccccc-0000-4000-8000-000000000005'::uuid)) v(id);
 
-update public.profiles set username = 'fx_' || substr(id::text, 1, 8)
-where id in ('00000000-0000-0000-0000-00000000000a',
-             '00000000-0000-0000-0000-00000000000f',
-             '00000000-0000-0000-0000-00000000000e',
-             '00000000-0000-0000-0000-00000000000d',
-             '00000000-0000-0000-0000-00000000000c');
+-- handle_new_user has already created a profiles row per auth.users insert;
+-- give each a deterministic username.
+update public.profiles set username = 'fx_' || left(replace(id::text, '-', ''), 4)
+where id in ('aaaaaaaa-0000-4000-8000-000000000001',
+             'ffffffff-0000-4000-8000-000000000002',
+             'eeeeeeee-0000-4000-8000-000000000003',
+             'dddddddd-0000-4000-8000-000000000004',
+             'cccccccc-0000-4000-8000-000000000005');
 
 insert into public.friendships (requester_id, addressee_id, status, responded_at)
-values ('00000000-0000-0000-0000-00000000000a',
-        '00000000-0000-0000-0000-00000000000f', 'accepted', now());
+values ('aaaaaaaa-0000-4000-8000-000000000001',
+        'ffffffff-0000-4000-8000-000000000002', 'accepted', now());
 
 insert into public.groups (id, creator_id, name, timezone, checkin_cadence)
-values ('00000000-0000-0000-0000-0000000000g1'::uuid,
-        '00000000-0000-0000-0000-00000000000a', 'FX Group', 'UTC', 'none');
+values ('11111111-0000-4000-8000-000000000101',
+        'aaaaaaaa-0000-4000-8000-000000000001', 'FX Group One', 'UTC', 'none');
 insert into public.group_members (group_id, user_id, role) values
-  ('00000000-0000-0000-0000-0000000000g1', '00000000-0000-0000-0000-00000000000a', 'creator'),
-  ('00000000-0000-0000-0000-0000000000g1', '00000000-0000-0000-0000-00000000000d', 'member');
+  ('11111111-0000-4000-8000-000000000101', 'aaaaaaaa-0000-4000-8000-000000000001', 'creator'),
+  ('11111111-0000-4000-8000-000000000101', 'dddddddd-0000-4000-8000-000000000004', 'member');
 
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-00000000000a"}';
+set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-4000-8000-000000000001"}';
+
+-- … assertions here …
+
+rollback;
+```
+
+`rollback` is the teardown — nothing persists, so no id-scoped delete is needed. **Never** commit a fixture; if you ever must, delete only these six ids and never write a bare `count = 0` assertion (the live DB holds production rows).
+
+Assertion shape — each case is a `select` that yields PASS/FAIL, and a raising case is wrapped so the expected exception is the pass condition:
+
+```sql
+-- Expect-success case:
+select case when public.create_encouragement('t', null, true, '{}', '[]', '[]',
+              array['ffffffff-0000-4000-8000-000000000002']::uuid[]) is not null
+            then 'PASS' else 'FAIL' end as case_1_friend_timeline;
+
+-- Expect-raise case:
+do $$
+begin
+  perform public.create_encouragement('t', null, true, '{}', '[]', '[]',
+            array['eeeeeeee-0000-4000-8000-000000000003']::uuid[]);
+  raise exception 'FAIL: stranger tag was accepted';
+exception when sqlstate '42501' then
+  raise notice 'PASS: case 2 rejected';
+end $$;
 ```
 
 Run each case and record pass/fail. `OK` means the call succeeds; `42501` means it must raise `you can only tag people who can see this post`.
@@ -248,21 +288,17 @@ Run each case and record pass/fail. `OK` means the call succeeds; `42501` means 
 |---|---|---|
 | 1 | `create_encouragement('t', null, true, '{}', '[]', '[]', array['…f'])` — friend, timeline | OK |
 | 2 | `create_encouragement('t', null, true, '{}', '[]', '[]', array['…e'])` — stranger, timeline | `42501` |
-| 3 | `create_encouragement('t', null, false, array['…g1'], '[]', '[]', array['…d'])` — member, group-only | OK |
-| 4 | `create_encouragement('t', null, false, array['…g1'], '[]', '[]', array['…e'])` — stranger, group-only | `42501` |
-| 5 | `create_encouragement('t', null, true, array['…g1'], '[]', '[]', array['…f'])` — friend not member, mixed | OK |
-| 6 | `create_encouragement('t', null, true, array['…g1'], '[]', '[]', array['…d'])` — member not friend, mixed | OK |
+| 3 | `create_encouragement('t', null, false, array['…101'], '[]', '[]', array['…d'])` — member, group-only | OK |
+| 4 | `create_encouragement('t', null, false, array['…101'], '[]', '[]', array['…e'])` — stranger, group-only | `42501` |
+| 5 | `create_encouragement('t', null, true, array['…101'], '[]', '[]', array['…f'])` — friend not member, mixed | OK |
+| 6 | `create_encouragement('t', null, true, array['…101'], '[]', '[]', array['…d'])` — member not friend, mixed | OK |
 | 7 | `create_encouragement('t', null, true, '{}', '[]', '[]', array['…a'])` — self-tag | OK, 0 tag rows |
 | 8 | direct `insert into public.post_tags` on own post | RLS denial (policy dropped) |
 | 9 | direct `insert into public.posts` as self | RLS denial (policy dropped) |
 
-For `check_in`, seed a window first, then assert: member `…d` → OK; stranger `…e` → `42501`.
+Ids abbreviate the canonical fixture: `…a` = author, `…f` = friend, `…e` = stranger, `…d` = group member, `…101` = group. Case 6 is the one that would regress if the rule were written as a conjunction instead of a disjunction.
 
-```sql
-rollback;
-```
-
-`rollback` is the teardown — nothing persists, so no id-scoped delete is needed. If you commit instead, delete **only** the five fixture uuids and group `…g1`; never a bare `delete from` or a `count = 0` assertion.
+For `check_in`, seed a `group_checkin_windows` row for `…101` with `opens_at = now() - interval '1 minute'` first, then assert: member `…d` → OK; stranger `…e` → `42501`.
 
 - [ ] **Step 8: Add the iOS error copy**
 
