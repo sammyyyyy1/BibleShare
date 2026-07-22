@@ -282,6 +282,13 @@ final class FakeNotificationService: NotificationServicing, @unchecked Sendable 
     private(set) var registeredTokens: [String] = []
     private(set) var unregisteredTokens: [String] = []
 
+    /// Opt-in queue of successive pages for `fetchNotifications` to return,
+    /// one per call, so a test can express "full page then short page" —
+    /// distinct from the always-`items` behavior every other test relies on.
+    /// Empty (the default) means fall back to `items`, unchanged.
+    var pageQueue: [[NotificationItem]] = []
+    private(set) var fetchCallCount = 0
+
     /// Fires mid-flight inside `markRead`, before success/failure is decided —
     /// lets tests observe optimistic UI state (e.g. run a fresher `load()`)
     /// while the "server call" is in flight. Async (unlike `onSetLike`)
@@ -289,7 +296,9 @@ final class FakeNotificationService: NotificationServicing, @unchecked Sendable 
     var onMarkRead: (@MainActor () async -> Void)?
 
     func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem] {
+        fetchCallCount += 1
         if let fetchError { throw fetchError }
+        if !pageQueue.isEmpty { return pageQueue.removeFirst() }
         return items
     }
     func unreadCount() async throws -> Int {

@@ -35,6 +35,20 @@ final class NotificationsViewModel {
     private(set) var isLoading = false
     var errorMessage: String?
 
+    /// False once `loadMore()` gets back a page shorter than requested —
+    /// that's the server's way of saying there's nothing older left. Without
+    /// this, `items.last?.createdAt` stops changing on an empty/short page
+    /// and the sentinel row's `.onAppear` re-fires `loadMore()` with the same
+    /// cursor forever (pull-to-refresh, `markAllRead`, or scrolling away and
+    /// back all make it visible again).
+    ///
+    /// A fresh `load()` always resets this to `true`: it doesn't yet know
+    /// whether the server has more beyond this page (a short first page can
+    /// legitimately be the server's whole result set, e.g. right after
+    /// account creation), so it defers that determination to the next
+    /// `loadMore()` rather than guessing from the first page's size alone.
+    private(set) var hasMore = true
+
     private let service: NotificationServicing
     private let pageSize = 40
 
@@ -58,6 +72,7 @@ final class NotificationsViewModel {
         defer { isLoading = false }
         do {
             items = try await service.fetchNotifications(before: nil, limit: pageSize)
+            hasMore = true
             unreadCount = try await service.unreadCount()
             generation += 1
         } catch {
@@ -66,11 +81,13 @@ final class NotificationsViewModel {
     }
 
     func loadMore() async {
-        guard let oldest = items.last?.createdAt, !isLoading else { return }
+        guard hasMore, let oldest = items.last?.createdAt, !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            items += try await service.fetchNotifications(before: oldest, limit: pageSize)
+            let page = try await service.fetchNotifications(before: oldest, limit: pageSize)
+            items += page
+            hasMore = page.count >= pageSize
             generation += 1
         } catch {
             errorMessage = PostError.message(for: error)

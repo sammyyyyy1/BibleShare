@@ -157,4 +157,29 @@ struct NotificationsViewModelTests {
         #expect(vm.unreadCount == 0)
         #expect(vm.items.allSatisfy { !$0.isUnread })
     }
+
+    /// Once the server returns a page shorter than requested, pagination must
+    /// be exhausted: without a `hasMore` flag, `items.last?.createdAt` stops
+    /// changing, so the sentinel row's `.onAppear` re-fires `loadMore()` with
+    /// the same cursor forever (pull-to-refresh, `markAllRead`, or scrolling
+    /// away and back all re-trigger it). Assert a further `loadMore()` after
+    /// the short page performs no additional fetch.
+    @Test func loadMoreStopsFetchingOnceAShortPageExhaustsResults() async {
+        let fake = FakeNotificationService()
+        let fullPage = (0..<40).map { _ in unreadItem() }
+        let shortPage = [unreadItem()]
+        fake.pageQueue = [fullPage, shortPage]
+        let vm = NotificationsViewModel(service: fake)
+
+        await vm.load()
+        #expect(vm.items.count == 40)
+
+        await vm.loadMore()
+        #expect(vm.items.count == 41)
+        #expect(fake.fetchCallCount == 2)
+
+        await vm.loadMore()
+        #expect(vm.items.count == 41)
+        #expect(fake.fetchCallCount == 2)
+    }
 }
