@@ -432,12 +432,19 @@ grant execute on function public.unregister_device_token(text) to authenticated,
 -- shares_group_with requires real group_members rows, so an inviter is
 -- invisible until you accept -- which already renders Plan 4's invite screen
 -- nameless, and would make a group_invite notification unactionable.
+-- PENDING ONLY -- deliberately NOT status-agnostic, unlike friendship_exists.
+-- respond_to_friend_request's decline DELETES the friendship row, so a declined
+-- request stops granting visibility by itself. respond_to_invite's decline only
+-- sets status='declined' and keeps the row forever, so a status-agnostic check
+-- would grant both parties permanent profile access after a decline. Accepted
+-- invites are covered by shares_group_with, populated in the same transaction.
 create or replace function private.invite_counterparty(a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.group_invites
-    where (inviter_id = a and invitee_id = b)
-       or (inviter_id = b and invitee_id = a)
+    where status = 'pending'
+      and ((inviter_id = a and invitee_id = b)
+        or (inviter_id = b and invitee_id = a))
   );
 $$;
 -- Called FROM an RLS policy, so it needs the authenticated grant

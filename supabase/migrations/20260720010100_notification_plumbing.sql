@@ -77,17 +77,27 @@ revoke execute on function public.unregister_device_token(text) from public, ano
 grant execute on function public.unregister_device_token(text) to authenticated, service_role;
 
 -- === profiles: the invite counterparty ===
--- private.friendship_exists is deliberately status-agnostic, so a PENDING
--- requester's profile is already visible. There is no equivalent for invites:
+-- private.friendship_exists is status-agnostic, so a PENDING requester's
+-- profile is already visible. There is no equivalent for invites:
 -- shares_group_with requires real group_members rows, so an inviter is
 -- invisible until you accept -- which already renders Plan 4's invite screen
 -- nameless, and would make a group_invite notification unactionable.
+-- PENDING ONLY -- deliberately NOT status-agnostic, unlike friendship_exists.
+-- That asymmetry is required, not an oversight: respond_to_friend_request's
+-- decline path DELETES the friendship row, so a declined request stops
+-- granting visibility on its own. respond_to_invite's decline path only sets
+-- status='declined' and keeps the row forever, with no expiry -- so a
+-- status-agnostic check here would let a declined invite grant the two parties
+-- permanent access to each other's profile. Once an invite is ACCEPTED the row
+-- becomes 'accepted' and private.shares_group_with takes over, in the same
+-- transaction that inserts group_members, so there is no visibility gap.
 create or replace function private.invite_counterparty(a uuid, b uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.group_invites
-    where (inviter_id = a and invitee_id = b)
-       or (inviter_id = b and invitee_id = a)
+    where status = 'pending'
+      and ((inviter_id = a and invitee_id = b)
+        or (inviter_id = b and invitee_id = a))
   );
 $$;
 -- Called FROM an RLS policy, so it needs the authenticated grant

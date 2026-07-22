@@ -254,19 +254,22 @@ There is no equivalent for invites. `private.shares_group_with` requires actual 
 - Plan 4's existing incoming-invite screen renders a nameless row (`GroupInviteRow.inviter` decodes to `nil`) — a latent blemish this plan surfaces.
 - A `group_invite` notification would say nothing at all about who invited you, making it unactionable.
 
-Add a symmetric, status-agnostic helper mirroring `friendship_exists`, and a clause to the policy:
+Add a symmetric helper and a clause to the policy — scoped to **pending** invites only:
 
 ```sql
 create or replace function private.invite_counterparty(a uuid, b uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.group_invites
-    where (inviter_id = a and invitee_id = b) or (inviter_id = b and invitee_id = a)
+    where status = 'pending'
+      and ((inviter_id = a and invitee_id = b) or (inviter_id = b and invitee_id = a))
   );
 $$;
 ```
 
-This is minimal disclosure: it exposes a profile only between two users who already have a direct invite relationship, in exactly the way a pending friendship already does.
+**The `pending` filter is required, and this is where the analogy to `friendship_exists` breaks.** `friendship_exists` can afford to be status-agnostic because `respond_to_friend_request`'s decline path **deletes** the row — a declined request stops granting visibility on its own. `respond_to_invite`'s decline path only sets `status='declined'` and **keeps the row forever**, with no expiry. A status-agnostic check would therefore let a single declined invite grant both parties permanent access to each other's profile.
+
+With the filter, all three states behave: **pending** → visible (which is what the invite screen and the `group_invite` notification need); **declined** → hidden; **accepted** → still visible, now via `shares_group_with`, which `respond_to_invite` populates in the same transaction, so there is no gap.
 
 ### 5.4 PostgREST embed FK
 
