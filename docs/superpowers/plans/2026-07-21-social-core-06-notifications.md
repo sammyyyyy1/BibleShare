@@ -1182,16 +1182,33 @@ Deno.serve(async () => {
 Call `mcp__supabase__deploy_edge_function` with name `push`, entrypoint `index.ts`, `verify_jwt: true`, and both files.
 Expected: success.
 
-- [ ] **Step 4: Invoke it once and confirm the no-op contract**
+- [ ] **Step 4: Invoke it and confirm the no-op contract — with a real pending row**
 
-Invoke with the service-role key as bearer.
-Expected body: `{"transport":"noop","pending":N,"sent":0,"failed":0,"pruned":0}`.
+**This test is worthless unless `pending` is non-zero.** If `notifications` happens to be empty, the function short-circuits before reaching any row and `count(pushed_at is not null) = 0` is vacuously true — it would pass identically against an implementation that stamps every row it sees. Seed one row first.
 
-Then assert the rows were **not** touched:
+Invoke with the **publishable** key as bearer, not the service-role key: `verify_jwt` only checks that the JWT is a valid project token, so the publishable key is sufficient and avoids handling a privileged credential.
+
 ```sql
-select count(*) from public.notifications where pushed_at is not null;
+-- Committed on purpose (the Edge Function cannot see an uncommitted row).
+-- One known id, deleted by that id immediately after.
+insert into public.notifications (id, recipient_id, type)
+select 'deadbeef-0000-4000-8000-0000000000ff', u.id, 'friend_request'
+from auth.users u limit 1
+on conflict (id) do nothing;
 ```
-Expected: `0`. **If this is non-zero the no-op contract is broken — stop and fix before continuing.**
+
+```bash
+curl -s -X POST 'https://jstdoizgosatitptyrdy.supabase.co/functions/v1/push' \
+  -H 'Authorization: Bearer <publishable key>' \
+  -H 'Content-Type: application/json' -d '{}'
+```
+Expected: `{"transport":"noop","pending":1,...}` — **`pending` must be ≥ 1**, proving the function actually saw the row.
+
+```sql
+select pushed_at from public.notifications where id = 'deadbeef-0000-4000-8000-0000000000ff';
+delete from public.notifications where id = 'deadbeef-0000-4000-8000-0000000000ff';
+```
+Expected: `pushed_at` is **null**. **If it is stamped, the no-op contract is broken — stop and fix before continuing.** Then confirm the fixture row is gone (scoped to that id — never a bare `delete`).
 
 - [ ] **Step 5: Write the drain schedule — but DO NOT APPLY it**
 
