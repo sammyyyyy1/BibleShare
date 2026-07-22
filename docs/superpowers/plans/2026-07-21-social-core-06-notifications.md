@@ -1193,14 +1193,32 @@ select count(*) from public.notifications where pushed_at is not null;
 ```
 Expected: `0`. **If this is non-zero the no-op contract is broken — stop and fix before continuing.**
 
-- [ ] **Step 5: Schedule the drain**
+- [ ] **Step 5: Write the drain schedule — but DO NOT APPLY it**
 
-Create `supabase/migrations/20260720010400_push_cron.sql`:
+**Write this file and commit it. Do not run `apply_migration` on it, and do not create any vault secret.**
+
+Two preconditions are unmet on this project, and one of them must not be automated:
+
+1. `vault.secrets` is **empty** — neither `project_url` nor `service_role_key` exists. The cron body authenticates to the Edge Function with the **service-role key**, a credential that grants full database access. An agent must not obtain, paste, or store it; the project owner creates that secret themselves.
+2. `pg_net` is **not installed**, so `net.http_post` does not exist yet. (`pg_cron` and `supabase_vault` are installed.)
+
+Deferring this costs nothing today: the transport is `NoopTransport`, so the cron would be waking once a minute to call a function that short-circuits and mutates nothing. The queue is drained by the *transport*, not the schedule, and there is no transport yet.
+
+Create `supabase/migrations/20260720010400_push_cron.sql` containing the activation, so switching it on later is one command:
 
 ```sql
 -- Plan 6 Task 5 — drain the notification queue once a minute.
--- Harmless while the transport is a no-op: the function short-circuits and
--- mutates nothing.
+--
+-- NOT APPLIED. Activation is deliberately manual because it depends on the
+-- service-role key, which an agent must never handle. To switch on:
+--   1) select vault.create_secret('https://jstdoizgosatitptyrdy.supabase.co', 'project_url');
+--   2) select vault.create_secret('<service role key>', 'service_role_key');  -- owner runs this
+--   3) apply this migration.
+-- Until then the queue simply accumulates, bounded by the Edge Function's
+-- 1-day selection window. Harmless while the transport is a no-op: the
+-- function short-circuits and mutates nothing.
+create extension if not exists pg_net;
+
 select cron.schedule('push-notifications', '* * * * *', $$
   select net.http_post(
     url     := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/push',
@@ -1213,23 +1231,14 @@ select cron.schedule('push-notifications', '* * * * *', $$
 $$);
 ```
 
-Both vault secrets must exist first. Check, and create them if missing:
-```sql
-select name from vault.secrets where name in ('project_url','service_role_key');
--- if absent:
--- select vault.create_secret('https://jstdoizgosatitptyrdy.supabase.co', 'project_url');
--- select vault.create_secret('<service role key>', 'service_role_key');
-```
+- [ ] **Step 6: Confirm nothing was scheduled or secreted**
 
-- [ ] **Step 6: Apply and verify**
-
-`apply_migration`, name `push_cron`. Then after ~2 minutes:
 ```sql
-select jobname, status, return_message, end_time from cron.job_run_details d
-join cron.job j using (jobid) where j.jobname = 'push-notifications'
-order by end_time desc limit 3;
+select count(*) as push_jobs from cron.job where jobname = 'push-notifications';
+select count(*) as secrets from vault.secrets;
+select count(*) as pg_net from pg_extension where extname = 'pg_net';
 ```
-Expected: `succeeded` rows.
+Expected: **all three zero.** This step passes by proving the deferral was honoured. Task 11 must list this migration as written-but-unapplied so the reconciliation does not read it as a missing apply.
 
 - [ ] **Step 7: Commit**
 
