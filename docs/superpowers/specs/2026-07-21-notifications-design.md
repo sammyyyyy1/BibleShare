@@ -285,8 +285,14 @@ The rationale is not that the gap is new — it is that §4.1 makes it **worse**
 
 Scope, tightly bounded:
 
-- `private.checkin_cron_health()` returns one row: `last_success_at`, `minutes_since_success`, `failed_runs_last_hour`, `invalid_timezone_groups` (count of `groups` with `checkin_cadence <> 'none'` whose `timezone` does not resolve against `pg_timezone_names`).
-- A second `pg_cron` job, `checkin-cron-watchdog`, runs every 30 minutes and `raise warning`s with the specifics when `minutes_since_success > 30` or either count is non-zero.
+- `private.checkin_cron_health()` returns one row: `last_success_at`, `minutes_since_success`, `failed_runs_last_hour`, `invalid_timezone_groups`, and **`missed_windows`**.
+- A second `pg_cron` job, `checkin-cron-watchdog`, runs every 30 minutes and `raise warning`s with the specifics when `minutes_since_success > 30` or any count is non-zero.
+
+**`missed_windows` is the field that actually closes the loop, and the other three cannot substitute for it.** The first three are *proxies* for health, and every one of them stays green in precisely the failure this section exists to catch: when the `checkin_reminder` trigger raises, `open_checkin_windows` swallows it inside its per-group loop and still returns normally, so pg_cron records the run as `succeeded`, `last_success_at` keeps advancing, `failed_runs_last_hour` stays 0, and the timezone is valid. That is a **permanent** false negative, not a delayed one — no amount of waiting surfaces it.
+
+`missed_windows` instead asks the outcome question: for each active group, is a slot due and still un-opened? It is cause-agnostic, so it catches the swallowed trigger, an unparseable timezone, and any future skip path. A slot is only counted once it is more than 20 minutes overdue, since the opener runs every 15 and normal lag must not read as failure.
+
+By contrast, a *total* opener outage is caught by `minutes_since_success` with a worst case of roughly 60 minutes' latency (up to 15 minutes of staleness before failure begins, plus one full 30-minute watchdog cycle). That latency is acceptable at this scale; a permanent blind spot would not have been.
 
 **Explicitly not** in scope: a new `ops_alerts` table, an email/Slack integration, or generalising beyond this one job. The warning surfaces in Supabase logs and the health function is queryable on demand; it is documented as the hook to wire into a real alert channel when one exists. `groups.timezone` still has no `CHECK` constraint — impossible, since `CHECK` cannot subquery `pg_timezone_names` — so `create_group`'s validation plus this counter is the complete story.
 
