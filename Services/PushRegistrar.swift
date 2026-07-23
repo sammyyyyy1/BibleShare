@@ -19,6 +19,10 @@ final class PushRegistrar {
     /// value — rather than at launch.
     func registerAfterLogin() async {
         guard await CheckinReminderScheduler.requestAuthorization() else { return }
+        // Immediately after the grant, so reminders that a group list load
+        // skipped earlier (permission still undecided at the time) get
+        // scheduled now, rather than waiting for another load to happen.
+        await CheckinReminderScheduler.resyncLastKnown()
         UIApplication.shared.registerForRemoteNotifications()
     }
 

@@ -150,4 +150,40 @@ struct CheckinReminderSchedulerTests {
         }
         #expect(novemberFirstOccurrences.count == 1)
     }
+
+    // MARK: - Finding 2: a bail for lack of authorization must be recoverable
+
+    /// `sync` can't be driven through a fake `UNUserNotificationCenter` —
+    /// it's a concrete framework type, not a protocol seam — so this relies
+    /// on the real behavior of the unit-test host: headless test runs never
+    /// show the permission prompt, so `UNUserNotificationCenter.current()`
+    /// reports `.notDetermined`, which is neither `.authorized` nor
+    /// `.provisional`. That deterministically drives `sync` down its bail
+    /// path, which is exactly the path this finding is about. What this does
+    /// NOT cover: the "authorized" branch that actually schedules requests,
+    /// or `requestAuthorization()` itself — both need a real grant, which a
+    /// unit test host cannot give.
+    @Test @MainActor func syncRetainsTheGroupsItWasAskedToScheduleEvenWhenItBails() async {
+        let g = group(cadence: .daily, time: "08:00:00", weekday: nil, tz: "UTC")
+
+        await CheckinReminderScheduler.sync(groups: [g])
+
+        #expect(CheckinReminderScheduler.lastKnownGroupsForTesting().map(\.id) == [g.id])
+    }
+
+    /// Proves `resyncLastKnown()` re-invokes `sync` with the *retained* list
+    /// — not an empty list and not a no-op. The call-count check rules out
+    /// "did nothing"; the retained-groups check rules out "resynced with the
+    /// wrong groups" (either failure mode would otherwise look identical
+    /// from `lastKnownGroupsForTesting()` alone).
+    @Test @MainActor func resyncLastKnownReSyncsWithTheRetainedGroups() async {
+        let g = group(cadence: .daily, time: "08:00:00", weekday: nil, tz: "UTC")
+        await CheckinReminderScheduler.sync(groups: [g])
+        let callsBefore = CheckinReminderScheduler.syncCallCountForTesting
+
+        await CheckinReminderScheduler.resyncLastKnown()
+
+        #expect(CheckinReminderScheduler.syncCallCountForTesting == callsBefore + 1)
+        #expect(CheckinReminderScheduler.lastKnownGroupsForTesting().map(\.id) == [g.id])
+    }
 }

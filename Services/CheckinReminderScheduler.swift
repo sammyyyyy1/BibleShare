@@ -8,6 +8,20 @@ enum CheckinReminderScheduler {
     static let maxPending = 48
     private static let prefix = "checkin-"
 
+    /// The groups `sync` was most recently asked to schedule, retained even
+    /// when authorization is missing and `sync` bails. Without this, a group
+    /// list that loads before the user answers the permission prompt would
+    /// leave reminders unscheduled until something else re-triggers a load
+    /// (pull-to-refresh, an invite response, app restart) — `GroupsView`'s
+    /// own `.task` will not re-fire on a later tab switch, since `TabView`
+    /// keeps built tab content alive. `resyncLastKnown()` replays this list
+    /// once permission is granted.
+    ///
+    /// MainActor-isolated (not a bare `static var`) so this stays data-race
+    /// safe under Swift 6 strict concurrency without needing a full actor.
+    @MainActor
+    private static var lastKnownGroups: [FellowshipGroup] = []
+
     /// Strictly parses "HH:MM" or "HH:MM:SS". Every colon-separated segment
     /// must be entirely numeric - `compactMap { Int($0) }` would silently drop
     /// a non-numeric segment (e.g. ["aa","00","00"] -> [0,0]), fabricating a
@@ -79,9 +93,19 @@ enum CheckinReminderScheduler {
 
     /// Idempotent: replaces this app's check-in requests wholesale, so groups
     /// whose schedule changed (or that were left) cannot leave a stale reminder.
+    ///
+    /// MainActor-isolated so it can retain `groups` into `lastKnownGroups`
+    /// even on the bail path below — that retention is what makes the bail
+    /// recoverable via `resyncLastKnown()`.
+    @MainActor
     static func sync(groups: [FellowshipGroup],
                      center: UNUserNotificationCenter = .current(),
                      now: Date = Date()) async {
+        #if DEBUG
+        syncCallCountForTesting += 1
+        #endif
+        lastKnownGroups = groups
+
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus == .authorized ||
               settings.authorizationStatus == .provisional else { return }
@@ -125,4 +149,24 @@ enum CheckinReminderScheduler {
     ) async -> Bool {
         (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
+
+    /// Re-runs `sync` with the groups from the most recent call. Call this
+    /// right after authorization is granted (see
+    /// `PushRegistrar.registerAfterLogin()`) so reminders skipped by an
+    /// earlier bail get scheduled without waiting for a group list reload.
+    @MainActor
+    static func resyncLastKnown(center: UNUserNotificationCenter = .current(),
+                                now: Date = Date()) async {
+        await sync(groups: lastKnownGroups, center: center, now: now)
+    }
+
+    #if DEBUG
+    /// Test seams for Finding 2. `sync`'s authorization gate can't be driven
+    /// through a fake `UNUserNotificationCenter` (it's a concrete framework
+    /// type), so tests rely on the real, deterministic `.notDetermined`
+    /// status in a headless unit-test host and inspect retention through
+    /// these accessors instead of an actual scheduled request.
+    @MainActor private(set) static var syncCallCountForTesting = 0
+    @MainActor static func lastKnownGroupsForTesting() -> [FellowshipGroup] { lastKnownGroups }
+    #endif
 }

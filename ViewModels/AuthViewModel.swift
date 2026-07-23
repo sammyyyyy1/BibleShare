@@ -16,9 +16,18 @@ final class AuthViewModel {
 
     private let provider: AuthProviding
     private var debounceTask: Task<Void, Never>?
+    /// Runs before `provider.signOut()` tears down the session. Defaults to
+    /// unregistering this device's push token — `unregister_device_token` is
+    /// a SECURITY DEFINER RPC that resolves `auth.uid()`, so it must run
+    /// while the session can still authorize it. Injectable (matching
+    /// `GroupListViewModel.scheduleReminders` / `PostService.deleteRow`) so
+    /// the unit suite never touches `PushRegistrar` or the network.
+    private let willSignOut: @Sendable () async -> Void
 
-    init(provider: AuthProviding = SupabaseService.shared) {
+    init(provider: AuthProviding = SupabaseService.shared,
+         willSignOut: @escaping @Sendable () async -> Void = { await PushRegistrar.shared.unregisterBeforeLogout() }) {
         self.provider = provider
+        self.willSignOut = willSignOut
         Task { await observe() }
     }
 
@@ -78,6 +87,7 @@ final class AuthViewModel {
     func signInWithDiscord() async { await performOAuth { try await self.provider.signInWithWebOAuth(.discord) } }
 
     func signOut() async {
+        await willSignOut()
         await perform { try await self.provider.signOut() }
     }
 
