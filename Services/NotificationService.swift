@@ -20,7 +20,13 @@ final class NotificationService: NotificationServicing {
     func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem] {
         var query = client.from("notifications").select(Self.select)
         if let before {
-            query = query.lt("created_at", value: ISO8601DateFormatter().string(from: before))
+            // Pass the Date directly, matching FeedService/GroupService: a default
+            // ISO8601DateFormatter renders whole seconds only, moving the cursor
+            // earlier than the true microsecond-precision instant and silently
+            // skipping rows in the truncated sub-second gap. Check-in fan-outs
+            // insert bursts that share a transaction timestamp, so those gaps are
+            // real, not theoretical.
+            query = query.lt("created_at", value: before)
         }
         return try await query
             .order("created_at", ascending: false)
