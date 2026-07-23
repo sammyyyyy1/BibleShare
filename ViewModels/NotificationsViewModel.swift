@@ -11,8 +11,11 @@ enum NotificationDestination: Equatable, Hashable, Sendable {
     static func from(_ item: NotificationItem) -> NotificationDestination? {
         switch item.type {
         case .postLike, .postComment, .postTag, .memberCheckedIn:
-            // group_checkins.post_id is ON DELETE SET NULL by design, so a
-            // check-in notification can outlive its post. Fall back to the group.
+            // notifications.post_id is ON DELETE CASCADE, so a live notification
+            // always still has its post — the post-first branch is the real
+            // path. The group fallback is defensive only (a member_checked_in
+            // row always also carries group_id); it costs nothing and keeps the
+            // function total if a future type sets group_id without post_id.
             if let postID = item.postID { return .post(postID) }
             if let groupID = item.groupID { return .group(groupID) }
             return nil
