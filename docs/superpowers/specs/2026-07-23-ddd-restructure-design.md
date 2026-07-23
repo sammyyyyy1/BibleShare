@@ -41,6 +41,7 @@ App/                    (unchanged)
 Core/                   (cross-cutting infrastructure + shared kernel)
   Supabase/
     SupabaseService.swift
+    AppSecrets.swift             (Supabase URL/anon key from Secrets.plist)
   DesignSystem/
     Theme.swift
     SereneControls.swift
