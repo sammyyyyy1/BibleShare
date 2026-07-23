@@ -28,6 +28,7 @@ targets:
     sources:
       - path: App
       - path: Core
+      - path: Features
       - path: Shared
       - path: Models
       - path: Views
