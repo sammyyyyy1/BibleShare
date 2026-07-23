@@ -8,6 +8,11 @@ actor MockAuthProvider: AuthProviding {
     var profileToReturn: Profile?
     var availableResult: Bool = true
     var errorToThrow: Error?
+    /// Test seam: fires at the start of `signOut()`, before `throwIfNeeded()`,
+    /// so a test can record when the provider's sign-out actually ran and
+    /// compare that against other async work (e.g. AuthViewModel's
+    /// pre-sign-out hook) to assert ordering, not just that both happened.
+    var onSignOut: (@Sendable () async -> Void)?
 
     private let stream: AsyncStream<(event: AuthChangeEvent, session: Session?)>
     private let continuation: AsyncStream<(event: AuthChangeEvent, session: Session?)>.Continuation
@@ -28,11 +33,15 @@ actor MockAuthProvider: AuthProviding {
     func setProfile(_ p: Profile?) { profileToReturn = p }
     func setAvailable(_ b: Bool) { availableResult = b }
     func setError(_ e: Error?) { errorToThrow = e }
+    func setOnSignOut(_ hook: (@Sendable () async -> Void)?) { onSignOut = hook }
 
     func signUpEmail(email: String, password: String) async throws { try throwIfNeeded() }
     func signInEmail(email: String, password: String) async throws { try throwIfNeeded() }
     func signInWithWebOAuth(_ provider: Provider) async throws { try throwIfNeeded() }
-    func signOut() async throws { try throwIfNeeded() }
+    func signOut() async throws {
+        await onSignOut?()
+        try throwIfNeeded()
+    }
 
     func fetchProfile(userID: UUID) async throws -> Profile? {
         try throwIfNeeded(); return profileToReturn

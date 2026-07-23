@@ -272,3 +272,44 @@ enum FeedItemFactory {
         return item
     }
 }
+
+final class FakeNotificationService: NotificationServicing, @unchecked Sendable {
+    var items: [NotificationItem] = []
+    var unread = 0
+    var fetchError: Error?
+    var markReadError: Error?
+    private(set) var markReadCalls: [[UUID]?] = []
+    private(set) var registeredTokens: [String] = []
+    private(set) var unregisteredTokens: [String] = []
+
+    /// Opt-in queue of successive pages for `fetchNotifications` to return,
+    /// one per call, so a test can express "full page then short page" —
+    /// distinct from the always-`items` behavior every other test relies on.
+    /// Empty (the default) means fall back to `items`, unchanged.
+    var pageQueue: [[NotificationItem]] = []
+    private(set) var fetchCallCount = 0
+
+    /// Fires mid-flight inside `markRead`, before success/failure is decided —
+    /// lets tests observe optimistic UI state (e.g. run a fresher `load()`)
+    /// while the "server call" is in flight. Async (unlike `onSetLike`)
+    /// because the test needs to `await vm.load()` from inside it.
+    var onMarkRead: (@MainActor () async -> Void)?
+
+    func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem] {
+        fetchCallCount += 1
+        if let fetchError { throw fetchError }
+        if !pageQueue.isEmpty { return pageQueue.removeFirst() }
+        return items
+    }
+    func unreadCount() async throws -> Int {
+        if let fetchError { throw fetchError }
+        return unread
+    }
+    func markRead(ids: [UUID]?) async throws {
+        markReadCalls.append(ids)
+        await onMarkRead?()
+        if let markReadError { throw markReadError }
+    }
+    func registerDeviceToken(_ token: String) async throws { registeredTokens.append(token) }
+    func unregisterDeviceToken(_ token: String) async throws { unregisteredTokens.append(token) }
+}

@@ -47,4 +47,27 @@ struct AuthViewModelTests {
         await vm.signInWithGoogle()
         #expect(vm.errorMessage == nil)
     }
+
+    /// Finding 1 (Critical): a device token registered for user A must be
+    /// unregistered before the session goes away, because
+    /// `unregister_device_token` is a SECURITY DEFINER RPC that resolves
+    /// `auth.uid()` — once `provider.signOut()` has torn down the session,
+    /// the call can no longer authorize and silently does nothing. So the
+    /// ordering (not just "both happened") is the whole point of this test.
+    @Test func signOutUnregistersPushBeforeCallingTheProvider() async {
+        let mock = MockAuthProvider()
+        let order = OrderRecorder()
+        await mock.setOnSignOut { await order.record("provider.signOut") }
+        let vm = AuthViewModel(provider: mock, willSignOut: { await order.record("willSignOut") })
+
+        await vm.signOut()
+
+        #expect(await order.events == ["willSignOut", "provider.signOut"])
+    }
+
+    /// Actor because the closures are `@Sendable` and cross isolation.
+    private actor OrderRecorder {
+        private(set) var events: [String] = []
+        func record(_ label: String) { events.append(label) }
+    }
 }

@@ -67,6 +67,17 @@ protocol GroupServicing: Sendable {
     func fetchActiveCheckinTargets() async throws -> [CheckinTarget]
 }
 
+protocol NotificationServicing: Sendable {
+    /// Newest first, keyset-paginated on `created_at`.
+    func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem]
+    func unreadCount() async throws -> Int
+    /// `nil` marks every unread notification read.
+    func markRead(ids: [UUID]?) async throws
+    /// Best-effort: a failure must never block sign-in or sign-out.
+    func registerDeviceToken(_ token: String) async throws
+    func unregisterDeviceToken(_ token: String) async throws
+}
+
 enum PostError {
     /// Maps a thrown error to user-facing copy, separating the recoverable
     /// (retry) from the terminal (surface and stop).
@@ -95,6 +106,9 @@ enum PostError {
         if text.contains("a check-in schedule needs a time") { return "Pick a time for the check-in." }
         if text.contains("a weekly schedule needs a weekday") { return "Pick a weekday for the check-in." }
         if text.contains("unknown timezone") { return "That time zone isn't recognized." }
+        if text.contains("you can only tag people who can see this post") {
+            return "You can only tag people who can see this post."
+        }
         if text.contains("42501") || text.lowercased().contains("row-level security") {
             return "You don't have permission to do that."
         }
