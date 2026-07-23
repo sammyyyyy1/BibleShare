@@ -34,14 +34,33 @@ make generate && make build && make lint
 then
 
 ```bash
-xcodebuild -scheme BibleShare -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build/DerivedData test
+xcodebuild -scheme BibleShare -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build/DerivedData test 2>&1 | grep -E "Test run with|TEST SUCCEEDED|TEST FAILED"
 ```
 
-Expected: `make generate` regenerates the project with no error; `make build` succeeds (this is the Swift typecheck that proves no reference broke); `make lint` reports no new violations; the test run ends with `** TEST SUCCEEDED **` and the same test count as before the task.
+Expected: `make generate` regenerates the project with no error; `make build` succeeds (this is the Swift typecheck that proves no reference broke); `make lint` reports no new violations; and the test output contains **both**:
+
+```
+✔ Test run with 141 tests in 23 suites passed
+** TEST SUCCEEDED **
+```
+
+**This project uses Swift Testing, not XCTest** — the summary line is `Test run with N tests in M suites`, and there are no `Test Case ... passed` lines. The count must be exactly **141 tests in 23 suites** after every task. A dropped test file still reports `** TEST SUCCEEDED **` while the count silently falls, so always check the number, not just the status.
 
 ---
 
-## Task 0: Baseline capture
+## Task 0: Baseline capture — ALREADY COMPLETE
+
+**Do not re-run this task.** It was executed by the controller before task
+dispatch began. Recorded baseline, which every later task must match:
+
+| Measure | Baseline |
+|---|---|
+| Test run | **141 tests in 23 suites passed** |
+| Tracked `*.swift` files | **82** |
+| Final expected `*.swift` files (after Task 12) | **88** (82 − 4 deleted + 10 created) |
+| `Resources/Secrets.plist` | present (copied into this worktree; git-ignored) |
+
+Original Task 0 steps, retained for the record:
 
 **Files:**
 - Create: `build/baseline-tests.txt` (git-ignored scratch; do not commit)
@@ -917,8 +936,12 @@ Expected: no output — every test file now sits in a domain subfolder.
 The test count must match the Task 0 baseline exactly. A dropped test file would show as a lower count while still reporting `TEST SUCCEEDED`, so check the number, not just the status:
 
 ```bash
-xcodebuild -scheme BibleShare -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build/DerivedData test 2>&1 | grep -cE "^Test Case .* passed"
+xcodebuild -scheme BibleShare -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath build/DerivedData test 2>&1 | grep -E "Test run with"
 ```
+
+Expected exactly: `✔ Test run with 141 tests in 23 suites passed`. This is the
+task most likely to silently drop tests, so treat any other number as a failure
+and find the missing file before committing.
 
 - [ ] **Step 9: Commit**
 
@@ -1017,7 +1040,7 @@ git commit -m "docs(structure): update AGENTS.md for the domain-driven layout"
 All of the following hold:
 
 1. `make generate`, `make build`, `make lint` all succeed.
-2. The full suite passes with the **same test count** as the Task 0 baseline.
+2. The full suite reports exactly `Test run with 141 tests in 23 suites passed`.
 3. `Models/`, `Views/`, `ViewModels/`, `Services/` no longer exist.
 4. `project.yml` sources are exactly `App`, `Core`, `Features`, `Shared`, `Resources`.
 5. `.swiftlint.yml` included is exactly `App`, `Core`, `Features`, `Shared`.
