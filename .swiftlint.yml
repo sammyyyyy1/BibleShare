@@ -3,6 +3,8 @@
 
 included:
   - App
+  - Core
+  - Shared
   - Models
   - Views
   - ViewModels
