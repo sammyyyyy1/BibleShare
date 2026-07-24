@@ -165,3 +165,24 @@ struct GroupInviteRow: Decodable, Identifiable, Hashable, Sendable {
         case respondedAt = "responded_at"
     }
 }
+
+/// Params for the `create_group` RPC. Keys mirror the RPC's parameter names.
+/// `cadence`/`time`/`weekday`/`timezone` are stored dormant in Plan 4 — the
+/// create-group UI leaves them at their defaults (Plan 5 owns schedule UI).
+struct CreateGroupParams: Encodable, Sendable {
+    var name: String
+    var description: String?
+    var cadence: String = "none"
+    var time: String?
+    var weekday: Int?
+    var timezone: String = "America/New_York"
+
+    enum CodingKeys: String, CodingKey {
+        case name = "p_name"
+        case description = "p_description"
+        case cadence = "p_cadence"
+        case time = "p_time"
+        case weekday = "p_weekday"
+        case timezone = "p_timezone"
+    }
+}
