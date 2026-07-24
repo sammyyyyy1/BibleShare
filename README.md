@@ -12,10 +12,14 @@ A native iOS (Swift / SwiftUI) social app with a Supabase backend.
 
 ```
 App/         App entry point (@main) and root view
-Models/      Codable models mirroring the DB schema
-Views/       SwiftUI views
-ViewModels/  Observable state (@Observable)
-Services/    Supabase client wrapper, secrets loading
+Core/        Cross-cutting infrastructure: Supabase/ (client + secrets),
+             DesignSystem/ (Serene Light theme + controls), Media/ (image
+             processing, upload, remote images), Models/ (shared kernel:
+             Profile, PostError)
+Features/    One folder per domain (Auth, Profile, Feed, Compose, Bible,
+             Friends, Groups, CheckIn, Notifications), each co-locating
+             its views, view models, services, protocol seams, and models
+Shared/      App-level composition shell (RootTabView, HomeView, AppRouter)
 Resources/   Info.plist, Assets.xcassets, Secrets.plist(.example)
 project.yml  XcodeGen project definition (edit this, not the .xcodeproj)
 Makefile     build / run / lint workflow
