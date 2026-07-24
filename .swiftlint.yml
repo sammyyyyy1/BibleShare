@@ -3,10 +3,9 @@
 
 included:
   - App
-  - Models
-  - Views
-  - ViewModels
-  - Services
+  - Core
+  - Features
+  - Shared
 
 excluded:
   - build

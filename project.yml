@@ -27,10 +27,9 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: App
-      - path: Models
-      - path: Views
-      - path: ViewModels
-      - path: Services
+      - path: Core
+      - path: Features
+      - path: Shared
       - path: Resources
     settings:
       base:

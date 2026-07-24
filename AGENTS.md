@@ -7,10 +7,14 @@
 - **Stack:** Swift 6 (strict concurrency), SwiftUI, iOS 17+ deployment target, Supabase (supabase-swift 2.x: Auth, PostgREST, Storage), XcodeGen.
 - **Repo layout:**
   - `App/` — `@main` entry point + root view
-  - `Models/` — Codable models mirroring the DB schema
-  - `Views/` — SwiftUI views (`Theme.swift` + `Components/SereneControls.swift` = Serene Light design system)
-  - `ViewModels/` — `@Observable` state, tested against protocol-seam fakes
-  - `Services/` — Supabase client wrappers, one protocol per service
+  - `Core/` — cross-cutting infrastructure: `Supabase/` (client + secrets), `DesignSystem/`
+    (Serene Light theme + controls), `Media/` (image processing, upload, remote images),
+    `Models/` (shared kernel: `Profile`, `PostError`)
+  - `Features/<Domain>/` — one self-contained folder per domain (Auth, Profile, Feed,
+    Compose, Bible, Friends, Groups, CheckIn, Notifications), each co-locating its
+    views, view models, services, protocol seams, and models
+  - `Shared/` — app-level composition shell (`RootTabView`, `HomeView`, `AppRouter`)
+  - `BibleShareTests/` — mirrors the feature domains; shared fakes in `Support/`
   - `supabase/` — migration SQL (applied via Supabase MCP, not CLI)
   - `docs/superpowers/` — specs (`specs/`) and implementation plans (`plans/`)
 
@@ -26,20 +30,30 @@
 ## Known Entry Points / Hot Spots
 - `App/BibleShareApp.swift` — `@main`; sets up Supabase client + auth session restoration
 - `App/RootView.swift` — auth gate: routes to AuthView / UsernameSetupView / HomeView
-- `Services/SupabaseService.swift` — shared Supabase client singleton
-- `Services/SocialServicing.swift` — protocol seams for social services (ProfileService etc.); fakes in `BibleShareTests/FakeSocialServices.swift`
-- `Services/FriendService.swift` — friend request/respond RPC wrappers + friends-list query (protocol `FriendServicing` in `SocialServicing.swift`)
-- `Views/FriendsView.swift` — Friends sheet (add by exact username, requests, friends list); presented from HomeView's `person` tab
-- `Services/PostService.swift` — `check_in` RPC wrapper (group check-ins fan out one post + ledger rows per group)
-- `ViewModels/CheckInViewModel.swift` + `Views/CheckInView.swift` — Check-in tab (pending `active_checkin_targets` + compose in check-in mode); hoisted into `RootTabView` for the badge
-- `Views/Theme.swift` — Serene Light theme tokens (colors, spacing, typography)
+- `Core/Supabase/SupabaseService.swift` — shared Supabase client singleton
+- Protocol seams for social services (`FriendServicing`, `GroupServicing`, `FeedServicing`,
+  `PostServicing`, `NotificationServicing`, `MediaUploading`, etc.) now sit in the same file as
+  their concrete implementation — there is no single `SocialServicing.swift` anymore. The
+  exception is `UsernameResolving`, which has its own file `Features/Profile/UsernameResolving.swift`.
+  Shared fakes live in `BibleShareTests/Support/FakeSocialServices.swift`.
+- `Features/Friends/FriendService.swift` — friend request/respond RPC wrappers + friends-list
+  query (protocol `FriendServicing` defined in the same file)
+- `Features/Friends/FriendsView.swift` — Friends sheet (add by exact username, requests, friends list); presented from HomeView's `person` tab
+- `Features/Feed/PostService.swift` — `check_in` RPC wrapper (group check-ins fan out one post + ledger rows per group)
+- `Features/CheckIn/CheckInViewModel.swift` + `Features/CheckIn/CheckInView.swift` — Check-in tab (pending `active_checkin_targets` + compose in check-in mode); hoisted into `RootTabView` for the badge
+- `Core/DesignSystem/Theme.swift` — Serene Light theme tokens (colors, spacing, typography)
 
 ## Gotchas / Conventions
 - **Never edit `BibleShare.xcodeproj` directly** — it's generated and git-ignored. Edit `project.yml`, then run `make generate`.
 - **Never `killall CoreSimulatorService`** — it breaks this machine's Xcode 26 disk-image runtimes.
 - **Supabase project `jstdoizgosatitptyrdy`.** Migrations are applied via the Supabase MCP `apply_migration` tool (not just committed as files). After any RLS/RPC change, check `get_advisors type:"security"` — no new lints allowed.
 - **RLS helpers live in the `private` schema** (`private.is_friend`, `private.is_group_member`, `private.post_in_visible_group`). Policies call `private.*`, never `public.*`. Every `SECURITY DEFINER` function sets `set search_path = public`.
-- **Protocol-seam pattern:** every service has a protocol (see `AuthProviding.swift`, `SocialServicing.swift`); ViewModels test against fakes. Shared fakes (`BibleShareTests/FakeSocialServices.swift`) are **additive-only** — multiple ViewModel test suites depend on the same file.
+- **Protocol-seam pattern:** every service has a protocol, defined in the same file as its
+  implementation (e.g. `Features/Auth/AuthProviding.swift`, `Features/Friends/FriendService.swift`
+  defines `FriendServicing`); the one exception is `Features/Profile/UsernameResolving.swift`,
+  which is protocol-only. ViewModels test against fakes. Shared fakes
+  (`BibleShareTests/Support/FakeSocialServices.swift`) are **additive-only** — multiple ViewModel
+  test suites depend on the same file.
 - **SereneTextField** takes an `autocapitalization` parameter defaulting to `.never` — pass it explicitly for name/username fields that should capitalize.
 - **Defense-in-depth on write paths:** an RPC-level guard must never be the only enforcement if the underlying table's RLS could be reached another way (this bug class bit twice in Plan 2).
 - **`profiles` is locked down** (Plan 3): direct reads see only self + connected/tagged/commenter profiles. Cross-user discovery goes through the `find_profile_by_username` RPC (exact match) — never add a `like`/prefix profile query.

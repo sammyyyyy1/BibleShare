@@ -1,6 +1,17 @@
 import Foundation
 import Supabase
 
+protocol NotificationServicing: Sendable {
+    /// Newest first, keyset-paginated on `created_at`.
+    func fetchNotifications(before: Date?, limit: Int) async throws -> [NotificationItem]
+    func unreadCount() async throws -> Int
+    /// `nil` marks every unread notification read.
+    func markRead(ids: [UUID]?) async throws
+    /// Best-effort: a failure must never block sign-in or sign-out.
+    func registerDeviceToken(_ token: String) async throws
+    func unregisterDeviceToken(_ token: String) async throws
+}
+
 final class NotificationService: NotificationServicing {
     static let shared = NotificationService()
 

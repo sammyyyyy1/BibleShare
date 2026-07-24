@@ -1,6 +1,13 @@
 import Foundation
 import Supabase
 
+protocol FeedServicing: Sendable {
+    /// The Home feed: RLS (posts_select_visible) is the only visibility gate —
+    /// the viewer's own timeline posts plus friends' shared_to_timeline posts.
+    func fetchTimeline(before: Date?, limit: Int) async throws -> [FeedItem]
+    func likedPostIDs(userID: UUID, among: [UUID]) async throws -> Set<UUID>
+}
+
 final class FeedService: FeedServicing {
     static let shared = FeedService()
 

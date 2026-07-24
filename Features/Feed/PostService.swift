@@ -1,6 +1,17 @@
 import Foundation
 import Supabase
 
+protocol PostServicing: Sendable {
+    func createEncouragement(_ params: CreateEncouragementParams) async throws -> UUID
+    /// One check-in post fanned out to the given groups (each must have an
+    /// open, unanswered window). Returns the new post id.
+    func checkIn(_ params: CheckInParams) async throws -> UUID
+    func deletePost(id: UUID, imagePaths: [String]) async throws
+    func setLike(postID: UUID, userID: UUID, liked: Bool) async throws
+    func fetchComments(postID: UUID) async throws -> [CommentItem]
+    func addComment(postID: UUID, userID: UUID, content: String) async throws
+}
+
 final class PostService: PostServicing {
     static let shared = PostService()
 
