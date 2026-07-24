@@ -6,10 +6,6 @@ included:
   - Core
   - Features
   - Shared
-  - Models
-  - Views
-  - ViewModels
-  - Services
 
 excluded:
   - build
