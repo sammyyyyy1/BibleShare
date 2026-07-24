@@ -52,6 +52,15 @@ struct DeviceToken: Codable, Hashable, Sendable {
     }
 }
 
+/// A notification's post, kept deliberately thinner than `FeedItem` — a
+/// notification row needs a label, not attachments, counts, or an author
+/// embed it may not even be allowed to see.
+struct PostSummary: Decodable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    let kind: PostKind
+    let title: String?
+}
+
 /// One notification row with its PostgREST embeds. `actor` is optional
 /// because RLS can legitimately hide it; rendering must degrade, never blank.
 struct NotificationItem: Decodable, Identifiable, Hashable, Sendable {
