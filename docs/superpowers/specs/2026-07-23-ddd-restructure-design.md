@@ -76,8 +76,7 @@ Features/
     PostCell.swift
     ContentModels.swift          (Post, PostKind, Like, Comment, PostVerse,
                                   PostMedia, PostTag, MediaType)
-    FeedModels.swift             (FeedItem, CommentItem, CountRow, TaggedUser,
-                                  PostSummary)
+    FeedModels.swift             (FeedItem, CommentItem, CountRow, TaggedUser)
   Compose/
     ComposeEncouragementView.swift
     ComposeViewModel.swift
@@ -167,7 +166,8 @@ keep compiling.
 
 | Type | Destination |
 |------|-------------|
-| `FeedItem`, `CommentItem`, `CountRow`, `TaggedUser`, `PostSummary` | `Features/Feed/FeedModels.swift` |
+| `FeedItem`, `CommentItem`, `CountRow`, `TaggedUser` | `Features/Feed/FeedModels.swift` |
+| `PostSummary` | `Features/Notifications/NotificationModels.swift` (its only consumer is `NotificationItem`) |
 | `FriendEdge` | `Features/Friends/FriendModels.swift` |
 | `GroupListItem`, `GroupMemberRow`, `GroupInviteRow` | `Features/Groups/GroupModels.swift` |
 | `CheckinTarget` | `Features/CheckIn/CheckInModels.swift` |

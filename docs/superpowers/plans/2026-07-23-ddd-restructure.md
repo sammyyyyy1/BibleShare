@@ -562,11 +562,11 @@ Line numbers locate declarations in the original 248-line `Models/FeedModels.swi
 
 **Interfaces:**
 - Consumes: the per-domain model files created in Task 6.
-- Produces: read-side DTOs `FeedItem`, `CommentItem`, `CountRow`, `TaggedUser`, `PostSummary` in `Features/Feed/FeedModels.swift`; `FriendEdge` appended to Friends; `GroupListItem`, `GroupMemberRow`, `GroupInviteRow` appended to Groups; `CheckinTarget` in `Features/CheckIn/CheckInModels.swift`; `NotificationItem` appended to Notifications.
+- Produces: read-side DTOs `FeedItem`, `CommentItem`, `CountRow`, `TaggedUser` in `Features/Feed/FeedModels.swift`; `FriendEdge` appended to Friends; `GroupListItem`, `GroupMemberRow`, `GroupInviteRow` appended to Groups; `CheckinTarget` in `Features/CheckIn/CheckInModels.swift`; `NotificationItem` and `PostSummary` appended to Notifications. (`PostSummary` was corrected out of Feed post-implementation — its only consumer is `NotificationItem`.)
 
 - [ ] **Step 1: Create `Features/Feed/FeedModels.swift`**
 
-Cut verbatim, in this order: `CountRow` (7), `TaggedUser` (11), `FeedItem` (24), `CommentItem` (73), `PostSummary` (204).
+Cut verbatim, in this order: `CountRow` (7), `TaggedUser` (11), `FeedItem` (24), `CommentItem` (73). (`PostSummary`, orig. line 204, was initially placed here but corrected to `Features/Notifications/NotificationModels.swift` — its only consumer is `NotificationItem`.)
 
 Keep the original file-level doc comment, updated for its new home:
 
