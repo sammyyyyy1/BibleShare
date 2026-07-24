@@ -1,6 +1,13 @@
 import Foundation
 import Supabase
 
+protocol MediaUploading: Sendable {
+    /// Returns the storage object path (NOT a URL) — this is what post_media.url stores.
+    func upload(_ jpeg: Data, userID: UUID) async throws -> String
+    func delete(paths: [String]) async throws
+    func signedURL(path: String) async throws -> URL
+}
+
 final class MediaUploader: MediaUploading {
     static let shared = MediaUploader()
 

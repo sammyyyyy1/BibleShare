@@ -1,6 +1,18 @@
 import Foundation
 import Supabase
 
+protocol FriendServicing: Sendable {
+    /// Resolves the username server-side and returns the resulting friendship
+    /// row — `.pending` (request sent) or `.accepted` (reciprocal auto-accept).
+    func sendRequest(username: String) async throws -> Friendship
+    /// Accept (sets status + responded_at) or decline (deletes the row).
+    /// Addressee-only, enforced by the RPC.
+    func respond(requesterID: UUID, accept: Bool) async throws
+    /// Every edge involving `userID` — RLS (`fr_select_parties`) scopes rows to
+    /// the two parties; both parties' profiles are embedded.
+    func fetchEdges(userID: UUID) async throws -> [FriendEdge]
+}
+
 final class FriendService: FriendServicing {
     static let shared = FriendService()
 

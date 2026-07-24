@@ -1,6 +1,25 @@
 import Foundation
 import Supabase
 
+protocol GroupServicing: Sendable {
+    /// Create a group; the caller becomes its creator (a `group_members` row).
+    func createGroup(_ params: CreateGroupParams) async throws -> FellowshipGroup
+    /// The caller's groups (member of), each with role + member count.
+    func fetchMyGroups(userID: UUID) async throws -> [GroupListItem]
+    /// A group's members with embedded profiles.
+    func fetchMembers(groupID: UUID) async throws -> [GroupMemberRow]
+    /// A group's timeline (posts targeted at it), newest first.
+    func fetchGroupTimeline(groupID: UUID, before: Date?, limit: Int) async throws -> [FeedItem]
+    /// Creator-only invite by exact username; returns the pending invite row.
+    func invite(groupID: UUID, username: String) async throws -> GroupInvite
+    /// Pending invites addressed to the caller, with embedded group + inviter.
+    func fetchIncomingInvites(userID: UUID) async throws -> [GroupInviteRow]
+    /// Accept (adds membership) or decline (stamps status). Invitee-only.
+    func respondToInvite(inviteID: UUID, accept: Bool) async throws
+    /// The caller's groups with an open, unanswered check-in window.
+    func fetchActiveCheckinTargets() async throws -> [CheckinTarget]
+}
+
 final class GroupService: GroupServicing {
     static let shared = GroupService()
 
